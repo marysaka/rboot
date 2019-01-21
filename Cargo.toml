@@ -1,0 +1,11 @@
+[package]
+name = "rboot"
+version = "0.1.0"
+authors = ["Thog <me@thog.eu>"]
+edition = "2018"
+
+[package.metadata.cargo-xbuild]
+memcpy = true
+sysroot_path = "target/sysroot"
+
+[dependencies]
