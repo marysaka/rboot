@@ -9,3 +9,6 @@ memcpy = true
 sysroot_path = "target/sysroot"
 
 [dependencies]
+register = "0.3.2"
+static_assertions = "*"
+enum_primitive = { git = "https://github.com/roblabla/enum_primitive-rs.git", branch = "master"}

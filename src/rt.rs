@@ -1,5 +1,3 @@
-
-use core::intrinsics;
 use core::panic::PanicInfo;
 use core::ptr;
 
@@ -13,7 +11,7 @@ macro_rules! entry {
 
             f()
         }
-    }
+    };
 }
 
 #[panic_handler]
@@ -29,7 +27,8 @@ extern "C" {
 
 #[no_mangle]
 pub unsafe extern "C" fn reboot_to_rcm() -> () {
-    asm!("mov x1, xzr
+    asm!(
+        "mov x1, xzr
     mov w2, #0x2
     movz x1, 0xE450
     movk x1, #0x7000, lsl 16
@@ -38,14 +37,14 @@ pub unsafe extern "C" fn reboot_to_rcm() -> () {
     movk x1, #0x7000, lsl 16
     ldr w0, [x1]
     orr w0, w0, #0x10
-    str w0, [x1]");
+    str w0, [x1]"
+    );
 }
 
 #[link_section = ".crt0"]
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> () {
-
     // FIXME: move this later when we will want relocation
     asm!("mov sp, $0
           b _start_with_stack
