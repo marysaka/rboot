@@ -1,0 +1,79 @@
+[config]
+skip_core_tasks = true
+
+[env]
+RUST_TARGET_PATH = "${PWD}"
+
+[tasks.install-rust-src]
+install_crate = { rustup_component_name = "rust-src" }
+
+[tasks.install-llvm-tools-preview]
+install_crate = { rustup_component_name = "llvm-tools-preview" }
+
+[tasks.install-cargo-binutils]
+dependencies = ["install-llvm-tools-preview"]
+install_crate = { crate_name = "cargo-binutils", binary = "cargo-objcopy", test_arg = "--help" }
+
+[tasks.rboot-debug-build]
+workspace = false
+description = "Compiles rboot for debug"
+dependencies = ["install-rust-src", "install-cargo-binutils"]
+command = "cargo"
+args = ["xbuild", "--target=aarch64-thog-none", "--bin=rboot"]
+
+[tasks.rboot-release-build]
+workspace = false
+description = "Compiles rboot for release"
+dependencies = ["install-rust-src", "install-cargo-binutils"]
+command = "cargo"
+args = ["xbuild", "--target=aarch64-thog-none", "--bin=rboot", "--release"]
+
+[tasks.rboot-debug]
+env = { "RUSTFLAGS" = "--sysroot ${PWD}/target/sysroot" }
+dependencies = ["rboot-debug-build"]
+command = "cargo"
+args = ["objcopy", "--target=aarch64-thog-none", "--bin=rboot", "--", "-O", "binary", "rboot-debug.bin"]
+
+[tasks.rboot-release]
+env = { "RUSTFLAGS" = "--sysroot ${PWD}/target/sysroot" }
+dependencies = ["rboot-release-build"]
+command = "cargo"
+args = ["objcopy", "--target=aarch64-thog-none", "--bin=rboot", "--release", "--", "-O", "binary", "rboot-release.bin"]
+
+[tasks.rboot-debug-clean]
+script_runner = "@shell"
+script = [
+    '''
+        rm -f rboot-debug.bin
+    '''
+]
+
+[tasks.rboot-release-clean]
+script_runner = "@shell"
+script = [
+    '''
+        rm -f rboot-release.bin
+    '''
+]
+
+[tasks.clean]
+workspace = false
+dependencies = ["rboot-debug-clean", "rboot-release-clean"]
+description = "Clean workspace"
+command = "cargo"
+args = ["clean"]
+
+[tasks.clippy]
+env = { "RUSTFLAGS" = "--sysroot ${PWD}/target/sysroot" }
+workspace = false
+command = "cargo"
+args = ["clippy"]
+
+[tasks.debug]
+dependencies = ["rboot-debug"]
+
+[tasks.release]
+dependencies = ["rboot-release"]
+
+[tasks.default]
+dependencies = ["rboot-debug"]
