@@ -1782,8 +1782,9 @@ const SOC_GROUPS: [SocPinGrP; 165] = [
 ];
 
 impl PinGrP {
+    #![allow(clippy::too_many_arguments)]
     pub fn config(
-        &self,
+        self,
         function: PinFunction,
         pull: PinPull,
         tristate: PinTristate,
@@ -1801,16 +1802,16 @@ impl PinGrP {
         self.set_e_io_hv(hv);
     }
 
-    pub fn set_function(&self, function: PinFunction) {
+    pub fn set_function(self, function: PinFunction) {
         // avoid setting of reserved pins
         if function == PinFunction::Default
             || function == PinFunction::Reserved
-            || *self == PinGrP::Reserved
+            || self == PinGrP::Reserved
         {
             return;
         }
 
-        let val = *self as usize;
+        let val = self as usize;
 
         let mux = if function >= PinFunction::Rsvd0 {
             (function as u32 - PinFunction::Rsvd0 as u32) & 3
@@ -1838,8 +1839,8 @@ impl PinGrP {
         register.set(reg_value);
     }
 
-    pub fn set_pull_updown(&self, pull: PinPull) {
-        let val = *self as usize;
+    pub fn set_pull_updown(self, pull: PinPull) {
+        let val = self as usize;
         let pull_val = pull as u32;
         let register = unsafe { &(*((0x7000_3000 + (val * 4)) as *const ReadWrite<u32>)) };
 
@@ -1850,8 +1851,8 @@ impl PinGrP {
         register.set(reg_value);
     }
 
-    pub fn set_tristate(&self, tristate: PinTristate) {
-        let val = *self as usize;
+    pub fn set_tristate(self, tristate: PinTristate) {
+        let val = self as usize;
         let register = unsafe { &(*((0x7000_3000 + (val * 4)) as *const ReadWrite<u32>)) };
 
         let mut reg_value = register.get();
@@ -1867,8 +1868,8 @@ impl PinGrP {
         register.set(reg_value);
     }
 
-    pub fn set_io(&self, io: PinIo) {
-        let val = *self as usize;
+    pub fn set_io(self, io: PinIo) {
+        let val = self as usize;
         let register = unsafe { &(*((0x7000_3000 + (val * 4)) as *const ReadWrite<u32>)) };
 
         let mut reg_value = register.get();
@@ -1884,12 +1885,12 @@ impl PinGrP {
         register.set(reg_value);
     }
 
-    pub fn set_lock(&self, lock: PinLock) {
+    pub fn set_lock(self, lock: PinLock) {
         if lock == PinLock::Default {
             return;
         }
 
-        let val = *self as usize;
+        let val = self as usize;
         let register = unsafe { &(*((0x7000_3000 + (val * 4)) as *const ReadWrite<u32>)) };
 
         let mut reg_value = register.get();
@@ -1906,12 +1907,12 @@ impl PinGrP {
         register.set(reg_value);
     }
 
-    pub fn set_od(&self, od: PinOd) {
+    pub fn set_od(self, od: PinOd) {
         if od == PinOd::Default {
             return;
         }
 
-        let val = *self as usize;
+        let val = self as usize;
         let register = unsafe { &(*((0x7000_3000 + (val * 4)) as *const ReadWrite<u32>)) };
 
         let mut reg_value = register.get();
@@ -1926,12 +1927,12 @@ impl PinGrP {
         register.set(reg_value);
     }
 
-    pub fn set_e_io_hv(&self, hv: PinEIoHv) {
+    pub fn set_e_io_hv(self, hv: PinEIoHv) {
         if hv == PinEIoHv::Default {
             return;
         }
 
-        let val = *self as usize;
+        let val = self as usize;
         let register = unsafe { &(*((0x7000_3000 + (val * 4)) as *const ReadWrite<u32>)) };
 
         let mut reg_value = register.get();

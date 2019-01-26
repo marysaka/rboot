@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 use crate::tegra210::gpio::*;
 use crate::tegra210::pinmux::*;
 
