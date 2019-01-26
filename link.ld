@@ -10,16 +10,16 @@ MEMORY
 SECTIONS
 {
 	. = ORIGIN(CBOOT_FAUX_KERNEL);
-    .text ALIGN(4K) :
+    .text ALIGN(1K) :
 	{
 		*(.crt0)
 		*(.text)
 	} >CBOOT_FAUX_KERNEL
 
-	.rodata ALIGN(4K) : { *(.rodata) } >CBOOT_FAUX_KERNEL
-	.data ALIGN(4K) : { *(.data) } >CBOOT_FAUX_KERNEL
+	.rodata ALIGN(1K) : { *(.rodata) } >CBOOT_FAUX_KERNEL
+	.data ALIGN(1K) : { *(.data) } >CBOOT_FAUX_KERNEL
 
-	.bss ALIGN(4K) :
+	.bss ALIGN(1K) :
 	{
 		_sbss = .;
 		*(.bss COMMON)
