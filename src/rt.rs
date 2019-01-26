@@ -1,3 +1,5 @@
+#![allow(clippy::empty_loop)]
+
 use core::panic::PanicInfo;
 use core::ptr;
 
@@ -26,7 +28,7 @@ extern "C" {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn reboot_to_rcm() -> () {
+pub unsafe extern "C" fn reboot_to_rcm() {
     asm!(
         "mov x1, xzr
     mov w2, #0x2
@@ -44,7 +46,7 @@ pub unsafe extern "C" fn reboot_to_rcm() -> () {
 #[link_section = ".crt0"]
 #[naked]
 #[no_mangle]
-pub unsafe extern "C" fn _start() -> () {
+pub unsafe extern "C" fn _start() {
     // FIXME: move this later when we will want relocation
     asm!("mov sp, $0
           b _start_with_stack

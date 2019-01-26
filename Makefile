@@ -3,7 +3,7 @@ TARGET = aarch64-thog-none
 
 SOURCES = $(shell find src -name '*.rs') link.ld
 
-.PHONY: all clippy clean objdump nm
+.PHONY: all clippy clean objdump
 
 all: $(NAME).bin
 
@@ -22,3 +22,6 @@ clean:
 
 objdump:
 	cargo objdump --target $(TARGET) -- -disassemble -print-imm-hex $(NAME)
+
+clippy:
+	@RUST_TARGET_PATH=$(shell pwd) cargo xclippy --target $(TARGET)

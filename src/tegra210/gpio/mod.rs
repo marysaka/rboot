@@ -1,5 +1,5 @@
 use enum_primitive::FromPrimitive;
-use register::{mmio::*, register_bitfields};
+use register::mmio::*;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum GpioPort {
@@ -197,7 +197,7 @@ pub struct GpioCtl {
 
 impl GpioCtlr {
     pub fn get() -> *const GpioCtlr {
-        0x6000D000 as *const GpioCtlr
+        0x6000_D000 as *const GpioCtlr
     }
 }
 

@@ -1,7 +1,5 @@
 pub extern crate core as __core;
 
-use register::{mmio::*, register_bitfields};
-
 #[macro_export]
 macro_rules! offset_of {
     ($container:path, $field:ident) => {{

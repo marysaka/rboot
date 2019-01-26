@@ -1,4 +1,4 @@
-use register::{mmio::*, register_bitfields};
+use register::mmio::*;
 
 #[allow(non_snake_case)]
 #[repr(C)]

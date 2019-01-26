@@ -19,7 +19,7 @@ pub mod tegra210;
 use tegra210::gpio::{Gpio, GpioConfig, GpioPort};
 use tegra210::*;
 
-const APB: *const apb::AMBAPeripheralBus = 0x70000000 as *const apb::AMBAPeripheralBus;
+const APB: *const apb::AMBAPeripheralBus = 0x7000_0000 as *const apb::AMBAPeripheralBus;
 
 entry!(main);
 
@@ -94,6 +94,6 @@ fn pinmux_init() {
     }
 }
 
-fn main() -> () {
+fn main() {
     pinmux_init();
 }
