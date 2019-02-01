@@ -44,4 +44,12 @@ fn pinmux_init() {
 
 fn main() {
     pinmux_init();
+
+    //let uart_a = uart::UART::get_a();
+
+    //uart_a.put_char(13);
+    //uart_a.put_char(13);
+    //uart_a.put_char(13);
+    //uart_a.get_char();
+    tegra210::timer::usleep(6000000);
 }

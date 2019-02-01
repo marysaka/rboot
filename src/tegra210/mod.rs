@@ -23,6 +23,9 @@ macro_rules! offset_of {
 
 pub mod apb;
 pub mod board;
+pub mod clock;
 pub mod gpio;
 pub mod pinmux;
+pub mod timer;
+pub mod uart;
 pub mod utils;
