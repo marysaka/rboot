@@ -3,6 +3,8 @@
 use core::panic::PanicInfo;
 use core::ptr;
 
+use cortex_a::{asm, regs::*};
+
 #[macro_export]
 macro_rules! entry {
     ($path:path) => {
@@ -17,13 +19,24 @@ macro_rules! entry {
 }
 
 #[panic_handler]
-fn panic(_panic: &PanicInfo<'_>) -> ! {
+fn panic(panic_info: &PanicInfo<'_>) -> ! {
+    /*use crate::uart::UART;
+    use core::fmt::Write;
+
+    let mut uart = UART::A;
+    uart.init(115_200);
+    writeln!(&mut uart, "panic occurred: {:?}", panic_info.payload().downcast_ref::<&str>().unwrap());*/
+
+    unsafe {
+        reboot_to_rcm();
+    };
     loop {}
 }
 
 extern "C" {
     static mut _sbss: u8;
     static mut _ebss: u8;
+    static _stack_bottom: u8;
     static _stack_top: u8;
 }
 
@@ -44,13 +57,12 @@ pub unsafe extern "C" fn reboot_to_rcm() {
 }
 
 #[link_section = ".crt0"]
-#[naked]
+//#[naked]
 #[no_mangle]
-pub unsafe extern "C" fn _start() {
+pub unsafe extern "C" fn _start() -> ! {
     // FIXME: move this later when we will want relocation
-    asm!("mov sp, $0
-          b _start_with_stack
-         " :: "r"(&_stack_top as *const u8 as usize) :: "volatile");
+    SP.set(&_stack_top as *const u8 as u64);
+    _start_with_stack()
 }
 
 #[no_mangle]

@@ -26,11 +26,14 @@ SECTIONS
 		_ebss = .;
 	} >CBOOT_FAUX_KERNEL
 
-	. = ALIGN(8);
-
-	. = . + 0x1000; /* 4kB of stack memory */
-
-    _stack_top = .;
+	.stack ALIGN(1K) :
+	{
+		. = ALIGN(8);
+		_stack_bottom = .;
+		. = . + 0x1000; /* 4kB of stack memory */
+		. = ALIGN(8);
+		PROVIDE(_stack_top = .);
+	} >CBOOT_FAUX_KERNEL
 
 	/DISCARD/ : {
 		*(.comment*)

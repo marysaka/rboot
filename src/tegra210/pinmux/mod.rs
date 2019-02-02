@@ -291,6 +291,7 @@ pub enum PinEIoHv {
     High,
 }
 
+#[derive(Debug)]
 pub struct SocPinGrP(PinGrP, [PinFunction; 4]);
 
 const SOC_GROUPS: [SocPinGrP; 165] = [

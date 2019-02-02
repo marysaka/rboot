@@ -5,25 +5,32 @@
 #![feature(naked_functions)]
 #![feature(underscore_const_names)]
 
-extern crate embedded_serial;
-
 #[macro_use]
 extern crate enum_primitive;
+
+#[macro_use]
+extern crate log;
 
 extern crate register;
 
 #[macro_use]
 extern crate static_assertions;
 
+extern crate cortex_a;
+
+use cortex_a::regs::*;
+
+pub mod logger;
 
 pub mod rt;
 pub mod tegra210;
-pub mod serial;
+
+use core::fmt::Write;
 
 use tegra210::board;
 use tegra210::*;
 
-use embedded_serial::ImmutBlockingTx;
+use log::Level;
 
 const APB: *const apb::AMBAPeripheralBus = 0x7000_0000 as *const apb::AMBAPeripheralBus;
 
@@ -48,11 +55,32 @@ fn pinmux_init() {
     // TODO: configure DRVCFG
 }
 
+extern "C" {
+    static mut _sbss: u8;
+    static mut _ebss: u8;
+    static _stack_top: u8;
+}
+
+fn log_init() {
+    let mut uart_a = &mut uart::UART::A;
+    uart_a.init(115_200);
+    logger::init(logger::Type::A, Level::Trace);
+}
+
 fn main() {
     pinmux_init();
 
-    let uart_a = uart::UART::A;
+    log_init();
 
-    uart_a.init(115200);
-    uart_a.puts("Hello World from Rust\r\n");
+    let mut uart_a = &mut uart::UART::A;
+    write!(&mut uart_a, "Executing in EL: ");
+    uart_a.put_u32(CurrentEL.read(CurrentEL::EL));
+    uart_a.put_char(0xD);
+    uart_a.put_char(0xA);
+
+    //info!("Hello");
+    // FIXME: core::fmt::Argument seems pretty broken??? Are we breaking the stack?!
+    //core::fmt::write(&mut uart::UART::A, format_args!("example {:x} test {:x} words {:p}\r\n", 0xFF, 2, APB));
+    //core::fmt::write(&mut uart::UART::A, format_args!("example {:x} test {:x} words {:p}\r\n", 0xFE, 5, APB));
+    //core::fmt::write(&mut uart::UART::A, format_args!("example {:.1} test {:x} words {:p}\r\n", 0xFF, 0xDE, APB));
 }
