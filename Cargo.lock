@@ -1,4 +1,9 @@
 [[package]]
+name = "embedded-serial"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "enum_primitive"
 version = "0.1.1"
 source = "git+https://github.com/roblabla/enum_primitive-rs.git#e2344b98b16bcc54682bc838a87fcf1dfc6ab8d6"
@@ -15,6 +20,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "rboot"
 version = "0.1.0"
 dependencies = [
+ "embedded-serial 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "enum_primitive 0.1.1 (git+https://github.com/roblabla/enum_primitive-rs.git)",
  "register 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "static_assertions 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -39,6 +45,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [metadata]
+"checksum embedded-serial 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)" = "23cba09b46dc33141b384b676b9b95ae03cc32d52afe173f9f67b701500d510e"
 "checksum enum_primitive 0.1.1 (git+https://github.com/roblabla/enum_primitive-rs.git)" = "<none>"
 "checksum num-traits 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "0b3a5d7cc97d6d30d8b9bc8fa19bf45349ffe46241e8816f50f62f6d6aaabee1"
 "checksum register 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)" = "a0f44a6dc9a98359515541a0c46ef4e3630a30879c1d7a4038f31dd533570bfb"

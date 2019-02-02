@@ -5,19 +5,25 @@
 #![feature(naked_functions)]
 #![feature(underscore_const_names)]
 
-#[macro_use]
-extern crate static_assertions;
-
-extern crate register;
+extern crate embedded_serial;
 
 #[macro_use]
 extern crate enum_primitive;
 
+extern crate register;
+
+#[macro_use]
+extern crate static_assertions;
+
+
 pub mod rt;
 pub mod tegra210;
+pub mod serial;
 
 use tegra210::board;
 use tegra210::*;
+
+use embedded_serial::ImmutBlockingTx;
 
 const APB: *const apb::AMBAPeripheralBus = 0x7000_0000 as *const apb::AMBAPeripheralBus;
 
@@ -45,11 +51,8 @@ fn pinmux_init() {
 fn main() {
     pinmux_init();
 
-    //let uart_a = uart::UART::get_a();
+    let uart_a = uart::UART::A;
 
-    //uart_a.put_char(13);
-    //uart_a.put_char(13);
-    //uart_a.put_char(13);
-    //uart_a.get_char();
-    tegra210::timer::usleep(6000000);
+    uart_a.init(115200);
+    uart_a.puts("Hello World from Rust\r\n");
 }
