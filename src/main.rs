@@ -70,7 +70,8 @@ fn log_init() {
 fn main() {
     pinmux_init();
 
-    log_init();
+    // crash in EL1 for some unknown
+    //log_init();
 
     let mut uart_a = &mut uart::UART::A;
     write!(&mut uart_a, "Executing in EL: ");
@@ -78,9 +79,11 @@ fn main() {
     uart_a.put_char(0xD);
     uart_a.put_char(0xA);
 
-    //info!("Hello");
-    // FIXME: core::fmt::Argument seems pretty broken??? Are we breaking the stack?!
-    //core::fmt::write(&mut uart::UART::A, format_args!("example {:x} test {:x} words {:p}\r\n", 0xFF, 2, APB));
-    //core::fmt::write(&mut uart::UART::A, format_args!("example {:x} test {:x} words {:p}\r\n", 0xFE, 5, APB));
-    //core::fmt::write(&mut uart::UART::A, format_args!("example {:.1} test {:x} words {:p}\r\n", 0xFF, 0xDE, APB));
+    write!(&mut uart_a, "Core id: ");
+    uart_a.put_u64(MPIDR_EL1.get() & 0x3);
+    uart_a.put_char(0xD);
+    uart_a.put_char(0xA);
+
+    // this crash across all run
+    //writeln!(&mut uart_a, "Crash Me! {}\r", 0x42);
 }

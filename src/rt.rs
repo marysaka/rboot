@@ -3,8 +3,6 @@
 use core::panic::PanicInfo;
 use core::ptr;
 
-use cortex_a::{asm, regs::*};
-
 #[macro_export]
 macro_rules! entry {
     ($path:path) => {
@@ -60,9 +58,24 @@ pub unsafe extern "C" fn reboot_to_rcm() {
 //#[naked]
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
-    // FIXME: move this later when we will want relocation
-    SP.set(&_stack_top as *const u8 as u64);
-    _start_with_stack()
+    // Switch to EL1 from EL2 and setup the stack
+    asm!(
+        "msr sctlr_el1, xzr
+         mrs x0, hcr_el2
+         orr x0, x0, #(1 << 31)
+         msr hcr_el2, x0
+         mov x0, #0b00101
+         msr spsr_el2, x0
+         msr elr_el2, $0
+         msr sp_el1, $1
+         eret"
+        ::
+        "r"(_start_with_stack as *const () as u64),
+        "r"(&_stack_top as *const u8 as usize)
+        ::
+        "volatile"
+    );
+    core::intrinsics::unreachable()
 }
 
 #[no_mangle]

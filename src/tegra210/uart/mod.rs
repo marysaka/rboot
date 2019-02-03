@@ -145,6 +145,25 @@ impl UART {
             self.put_char(*c);
         }
     }
+
+    pub fn put_u64(&self, d: u64) {
+        let mut digits: [u8; 20] = [0x0; 20];
+        let mut d = d;
+
+        for i in digits.iter_mut() {
+            *i = ((d % 10) + 0x30) as u8;
+
+            d /= 10;
+
+            if d == 0 {
+                break;
+            }
+        }
+
+        for c in digits.iter().rev() {
+            self.put_char(*c);
+        }
+    }
 }
 
 impl core::fmt::Write for UART {
