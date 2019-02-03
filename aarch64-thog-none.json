@@ -12,6 +12,7 @@
   "disable-redzone": true,
   "env": "",
   "executables": true,
+  "features": "+a57,+strict-align,-fp-armv8",
   "is-builtin": true,
   "linker": "rust-lld",
   "linker-flavor": "ld.lld",
