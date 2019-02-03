@@ -65,14 +65,15 @@ extern "C" {
 fn log_init() {
     let mut uart_a = &mut uart::UART::A;
     uart_a.init(115_200);
-    logger::init(logger::Type::A, Level::Trace);
+
+    // TODO: setup MMU (this throw a "Synchronous external abort on translation table walk")
+    //logger::init(logger::Type::A, Level::Trace);
 }
 
 fn main() {
     pinmux_init();
 
-    // crash in EL1 for some unknown
-    //log_init();
+    log_init();
 
     let mut uart_a = &mut uart::UART::A;
     write!(&mut uart_a, "Executing in EL: ");
@@ -85,6 +86,5 @@ fn main() {
     uart_a.put_char(0xD);
     uart_a.put_char(0xA);
 
-    // this crash across all run
-    //writeln!(&mut uart_a, "Crash Me! {}\r", 0x42);
+    writeln!(&mut uart_a, "Crash Me! {}\r", 0x42);
 }
