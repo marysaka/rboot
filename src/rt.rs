@@ -3,6 +3,8 @@
 use core::panic::PanicInfo;
 use core::ptr;
 
+use crate::exception_vectors;
+
 #[macro_export]
 macro_rules! entry {
     ($path:path) => {
@@ -54,7 +56,7 @@ pub unsafe extern "C" fn reboot_to_rcm() {
     );
 }
 
-#[link_section = ".crt0"]
+#[link_section = ".text.boot"]
 //#[naked]
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
@@ -84,6 +86,8 @@ pub unsafe extern "C" fn _start_with_stack() -> ! {
     // FIXME: Will not work when we will want relocation
     let count = &_ebss as *const u8 as usize - &_sbss as *const u8 as usize;
     ptr::write_bytes(&mut _sbss as *mut u8, 0, count);
+
+    exception_vectors::set_vbar_el1();
 
     // Call user entry point
     extern "Rust" {

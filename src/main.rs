@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(asm)]
+#![feature(global_asm)]
 #![feature(core_intrinsics)]
 #![feature(naked_functions)]
 #![feature(underscore_const_names)]
@@ -20,8 +21,8 @@ extern crate cortex_a;
 
 use cortex_a::regs::*;
 
+pub mod exception_vectors;
 pub mod logger;
-
 pub mod rt;
 pub mod tegra210;
 

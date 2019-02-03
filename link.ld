@@ -10,11 +10,13 @@ MEMORY
 SECTIONS
 {
 	. = ORIGIN(CBOOT_FAUX_KERNEL);
-    .text ALIGN(1K) :
+	.text ALIGN(1K) :
 	{
-		*(.crt0)
-		*(.text)
+		KEEP(*(.text.boot))
+		*(.text .text.*)
 	} >CBOOT_FAUX_KERNEL
+
+	.vectors ALIGN(2K): { *(.vectors) } >CBOOT_FAUX_KERNEL
 
 	.rodata ALIGN(1K) : { *(.rodata) } >CBOOT_FAUX_KERNEL
 	.data ALIGN(1K) : { *(.data) } >CBOOT_FAUX_KERNEL
