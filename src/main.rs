@@ -24,8 +24,8 @@ pub mod tegra210;
 
 use core::fmt::Write;
 
-use tegra210::board;
-use tegra210::*;
+use crate::tegra210::board;
+use crate::tegra210::*;
 
 use log::Level;
 
