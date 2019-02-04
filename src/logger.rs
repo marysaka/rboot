@@ -57,7 +57,8 @@ pub fn init(uart_type: Type, level: Level) -> Result<(), SetLoggerError> {
         LOGGER.set_type(uart_type);
         LOGGER.set_level(level);
 
-        // FIXME: break in EL1 for some reasons?
-        log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info))
+        // FIXME: This hang because of some unexpected behaviour of compare_and_swap
+        //log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
+        Ok(())
     }
 }

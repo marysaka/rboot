@@ -10,7 +10,6 @@ sysroot_path = "target/sysroot"
 
 [dependencies]
 log = "0.4.6"
-cortex-a = "2.4.0"
 register = "0.3.2"
 static_assertions = "*"
 enum_primitive = { git = "https://github.com/roblabla/enum_primitive-rs.git", branch = "master"}

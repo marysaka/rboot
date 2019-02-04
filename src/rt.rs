@@ -5,6 +5,9 @@ use core::ptr;
 
 use crate::exception_vectors;
 
+use crate::tegra210;
+use core::fmt::Write;
+
 #[macro_export]
 macro_rules! entry {
     ($path:path) => {
@@ -20,13 +23,6 @@ macro_rules! entry {
 
 #[panic_handler]
 fn panic(panic_info: &PanicInfo<'_>) -> ! {
-    /*use crate::uart::UART;
-    use core::fmt::Write;
-
-    let mut uart = UART::A;
-    uart.init(115_200);
-    writeln!(&mut uart, "panic occurred: {:?}", panic_info.payload().downcast_ref::<&str>().unwrap());*/
-
     unsafe {
         reboot_to_rcm();
     };
@@ -61,7 +57,7 @@ pub unsafe extern "C" fn reboot_to_rcm() {
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
     // Switch to EL1 from EL2 and setup the stack
-    asm!(
+    /*asm!(
         "msr sctlr_el1, xzr
          mrs x0, hcr_el2
          orr x0, x0, #(1 << 31)
@@ -76,18 +72,29 @@ pub unsafe extern "C" fn _start() -> ! {
         "r"(&_stack_top as *const u8 as usize)
         ::
         "volatile"
-    );
+    );*/
+
+    asm!("mov sp, $0
+          mrs x0, mpidr_el1
+          and x0, x0, #3
+          b _start_with_stack"
+         :: "r"(&_stack_top as *const u8 as usize) :: "volatile");
     core::intrinsics::unreachable()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _start_with_stack() -> ! {
+pub unsafe extern "C" fn _start_with_stack(core_id: u32) -> ! {
+    // I don't trust the payload before us so we make sure to power off
+    if core_id != 0 {
+        loop { asm!("wfe"); }
+    }
+
+    exception_vectors::set_vbar_el2();
+
     // Clean .bss
     // FIXME: Will not work when we will want relocation
     let count = &_ebss as *const u8 as usize - &_sbss as *const u8 as usize;
     ptr::write_bytes(&mut _sbss as *mut u8, 0, count);
-
-    exception_vectors::set_vbar_el1();
 
     // Call user entry point
     extern "Rust" {

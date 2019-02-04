@@ -24,16 +24,20 @@ SECTIONS
 	.bss ALIGN(1K) :
 	{
 		_sbss = .;
-		*(.bss COMMON)
+
+		*(.bss .bss.*)
+		*(COMMON)
+
+		. = ALIGN(8);
 		_ebss = .;
 	} >CBOOT_FAUX_KERNEL
 
 	.stack ALIGN(1K) :
 	{
-		. = ALIGN(8);
+		. = ALIGN(16);
 		_stack_bottom = .;
 		. = . + 0x1000; /* 4kB of stack memory */
-		. = ALIGN(8);
+		. = ALIGN(16);
 		PROVIDE(_stack_top = .);
 	} >CBOOT_FAUX_KERNEL
 

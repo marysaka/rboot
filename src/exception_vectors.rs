@@ -17,8 +17,8 @@ global_asm!(
 
     .section .vectors, \"ax\"
     .align  11
-    .global el1_vector_table;
-    el1_vector_table:
+    .global el2_vector_table;
+    el2_vector_table:
         /* Current EL with SP0 */
         vector_entry _start_with_stack
         vector_not_handled
@@ -33,14 +33,14 @@ global_asm!(
         vector_not_handled
 
         .align 9
-        /* EL0 exception to EL1 (AArch64) */
+        /* EL1 exception to EL2 (AArch64) */
         vector_not_handled
         vector_not_handled
         vector_not_handled
         vector_not_handled
 
         .align 9
-        /* EL0 exception to EL1 (AArch32) */
+        /* EL1 exception to EL2 (AArch32) */
         vector_not_handled
         vector_not_handled
         vector_not_handled
@@ -48,13 +48,13 @@ global_asm!(
     "
 );
 
-pub unsafe fn set_vbar_el1() {
+pub unsafe fn set_vbar_el2() {
     extern "C" {
-        static el1_vector_table: u64;
+        static el2_vector_table: u64;
     }
 
-    let exception_vectors_start: u64 = &el1_vector_table as *const _ as u64;
-    asm!("msr vbar_el1, $0" :: "r"(exception_vectors_start) :: "volatile");
+    let exception_vectors_start: u64 = &el2_vector_table as *const _ as u64;
+    asm!("msr vbar_el2, $0" :: "r"(exception_vectors_start) :: "volatile");
 }
 
 global_asm!("
@@ -83,22 +83,22 @@ global_asm!("
         push    x3,  x4
         push    x1,  x2
 
-        mrs     x20, esr_el1
+        mrs     x20, esr_el2
         push    x20, x0
 
-        mrs     x0, elr_el1
-        mrs     x1, spsr_el1
+        mrs     x0, elr_el2
+        mrs     x1, spsr_el2
         push    x0, x1
 
-        mrs     x0, far_el1
+        mrs     x0, far_el2
         push    x0, x0
     .endm
     .macro __restore_registers
         pop    x0, x0
 
         pop    x0, x1
-        msr    elr_el1, x0
-        msr    spsr_el1, x1
+        msr    elr_el2, x0
+        msr    spsr_el2, x1
 
         pop    x20, x0
 
@@ -153,7 +153,6 @@ struct ExceptionInfo {
 unsafe fn dump_exception(exception: &mut ExceptionInfo) {
     let mut uart_a = UART::A;
 
-
     write!(&mut uart_a, "Fault address:\t{:20x}\r\n", exception.far);
     write!(&mut uart_a, "Register dump:\r\n");
     write!(&mut uart_a, "PC:\t{:20x}\t", exception.pc);
@@ -185,7 +184,7 @@ unsafe extern "C" fn unhandled_vector(exception: &mut ExceptionInfo) {
     rt::reboot_to_rcm();
 }
 
-pub fn get_exception_type_el1(esr: u64) -> &'static str {
+pub fn get_exception_type_elx(esr: u64) -> &'static str {
     let exception_class = esr >> 26;
 
     match exception_class {
@@ -203,7 +202,7 @@ unsafe extern "C" fn current_elx_sync(exception: &mut ExceptionInfo) {
     let mut uart_a = UART::A;
     write!(&mut uart_a, "\r\n");
     write!(&mut uart_a, "Sync ELX Exception (");
-    uart_a.write_data(get_exception_type_el1(exception.esr).as_bytes());
+    uart_a.write_data(get_exception_type_elx(exception.esr).as_bytes());
     write!(&mut uart_a, ")\r\n");
     dump_exception(exception);
 
