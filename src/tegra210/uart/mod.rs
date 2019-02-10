@@ -1,6 +1,5 @@
 use crate::tegra210::clock::Clock;
 use crate::tegra210::timer::usleep;
-use core::ptr::NonNull;
 use register::mmio::ReadWrite;
 
 #[allow(non_snake_case)]

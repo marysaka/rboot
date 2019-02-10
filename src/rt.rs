@@ -4,9 +4,7 @@ use core::panic::PanicInfo;
 use core::ptr;
 
 use crate::exception_vectors;
-
-use crate::tegra210;
-use core::fmt::Write;
+use crate::mmu;
 
 #[macro_export]
 macro_rules! entry {
@@ -22,7 +20,7 @@ macro_rules! entry {
 }
 
 #[panic_handler]
-fn panic(panic_info: &PanicInfo<'_>) -> ! {
+fn panic(_panic_info: &PanicInfo<'_>) -> ! {
     unsafe {
         reboot_to_rcm();
     };
@@ -30,8 +28,8 @@ fn panic(panic_info: &PanicInfo<'_>) -> ! {
 }
 
 extern "C" {
-    static mut _sbss: u8;
-    static mut _ebss: u8;
+    static mut __start_bss__: u8;
+    static mut __end_bss__: u8;
     static _stack_bottom: u8;
     static _stack_top: u8;
 }
@@ -56,8 +54,18 @@ pub unsafe extern "C" fn reboot_to_rcm() {
 //#[naked]
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
-    // Switch to EL1 from EL2 and setup the stack
-    /*asm!(
+    asm!("mov sp, $0
+     b _switch_to_el1"
+    :: "r"(&_stack_top as *const u8 as usize) :: "volatile");
+    core::intrinsics::unreachable()
+}
+
+// TODO: don't switch to EL1
+// BODY: We need MMU support for EL2
+#[link_section = ".text.boot"]
+#[no_mangle]
+pub unsafe extern "C" fn _switch_to_el1() -> ! {
+    asm!(
         "msr sctlr_el1, xzr
          mrs x0, hcr_el2
          orr x0, x0, #(1 << 31)
@@ -72,29 +80,19 @@ pub unsafe extern "C" fn _start() -> ! {
         "r"(&_stack_top as *const u8 as usize)
         ::
         "volatile"
-    );*/
-
-    asm!("mov sp, $0
-          mrs x0, mpidr_el1
-          and x0, x0, #3
-          b _start_with_stack"
-         :: "r"(&_stack_top as *const u8 as usize) :: "volatile");
+    );
     core::intrinsics::unreachable()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _start_with_stack(core_id: u32) -> ! {
-    // I don't trust the payload before us so we make sure to power off
-    if core_id != 0 {
-        loop { asm!("wfe"); }
-    }
-
-    exception_vectors::set_vbar_el2();
-
+pub unsafe extern "C" fn _start_with_stack() -> ! {
     // Clean .bss
     // FIXME: Will not work when we will want relocation
-    let count = &_ebss as *const u8 as usize - &_sbss as *const u8 as usize;
-    ptr::write_bytes(&mut _sbss as *mut u8, 0, count);
+    let count = &__end_bss__ as *const u8 as usize - &__start_bss__ as *const u8 as usize;
+    ptr::write_bytes(&mut __start_bss__ as *mut u8, 0, count);
+
+    exception_vectors::set_vbar_el1();
+    mmu::setup();
 
     // Call user entry point
     extern "Rust" {

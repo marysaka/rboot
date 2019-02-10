@@ -17,8 +17,8 @@ global_asm!(
 
     .section .vectors, \"ax\"
     .align  11
-    .global el2_vector_table;
-    el2_vector_table:
+    .global el1_vector_table;
+    el1_vector_table:
         /* Current EL with SP0 */
         vector_entry _start_with_stack
         vector_not_handled
@@ -33,14 +33,14 @@ global_asm!(
         vector_not_handled
 
         .align 9
-        /* EL1 exception to EL2 (AArch64) */
+        /* Lower EL exception to Current EL (AArch64) */
         vector_not_handled
         vector_not_handled
         vector_not_handled
         vector_not_handled
 
         .align 9
-        /* EL1 exception to EL2 (AArch32) */
+        /* Lower EL exception to Current EL (AArch32) */
         vector_not_handled
         vector_not_handled
         vector_not_handled
@@ -48,16 +48,17 @@ global_asm!(
     "
 );
 
-pub unsafe fn set_vbar_el2() {
+pub unsafe fn set_vbar_el1() {
     extern "C" {
-        static el2_vector_table: u64;
+        static el1_vector_table: u64;
     }
 
-    let exception_vectors_start: u64 = &el2_vector_table as *const _ as u64;
-    asm!("msr vbar_el2, $0" :: "r"(exception_vectors_start) :: "volatile");
+    let exception_vectors_start: u64 = &el1_vector_table as *const _ as u64;
+    asm!("msr vbar_el1, $0" :: "r"(exception_vectors_start) :: "volatile");
 }
 
-global_asm!("
+global_asm!(
+    "
     .macro  push, xreg1, xreg2
         stp     \\xreg1, \\xreg2, [sp, #-16]!
     .endm
@@ -83,22 +84,22 @@ global_asm!("
         push    x3,  x4
         push    x1,  x2
 
-        mrs     x20, esr_el2
+        mrs     x20, esr_el1
         push    x20, x0
 
-        mrs     x0, elr_el2
-        mrs     x1, spsr_el2
+        mrs     x0, elr_el1
+        mrs     x1, spsr_el1
         push    x0, x1
 
-        mrs     x0, far_el2
+        mrs     x0, far_el1
         push    x0, x0
     .endm
     .macro __restore_registers
         pop    x0, x0
 
         pop    x0, x1
-        msr    elr_el2, x0
-        msr    spsr_el2, x1
+        msr    elr_el1, x0
+        msr    spsr_el1, x1
 
         pop    x20, x0
 
@@ -118,26 +119,40 @@ global_asm!("
         pop    x27, x28
         pop    x29, x30
     .endm
-    ");
+    "
+);
+
+extern "C" {
+    static mut __start_bss__: u8;
+    static mut __end_bss__: u8;
+    static _stack_bottom: u8;
+    static _stack_top: u8;
+}
 
 #[naked]
 #[no_mangle]
 unsafe fn _unhandled_vector() {
-    asm!("__save_registers
+    asm!(
+        "
+        mov sp, $0
+        __save_registers
           mov x0, sp
           bl unhandled_vector
           __restore_registers
-          eret");
+          eret"
+    :: "r"(&_stack_top as *const u8 as usize) :: "volatile");
 }
 
 #[naked]
 #[no_mangle]
 unsafe fn _current_elx_sync() {
-    asm!("__save_registers
+    asm!(
+        "__save_registers
           mov x0, sp
           bl current_elx_sync
           __restore_registers
-          eret");
+          eret"
+    );
 }
 
 #[repr(C)]
@@ -153,22 +168,17 @@ struct ExceptionInfo {
 unsafe fn dump_exception(exception: &mut ExceptionInfo) {
     let mut uart_a = UART::A;
 
-    write!(&mut uart_a, "Fault address:\t{:20x}\r\n", exception.far);
-    write!(&mut uart_a, "Register dump:\r\n");
-    write!(&mut uart_a, "PC:\t{:20x}\t", exception.pc);
-    write!(&mut uart_a, "CPSR:\t{:20x}\t", exception.cpsr);
-    write!(&mut uart_a, "ESR:\t{:20x}\r\n", exception.esr);
+    write!(&mut uart_a, "Fault address:\t{:20x}\r\n", exception.far).unwrap();
+    write!(&mut uart_a, "Register dump:\r\n").unwrap();
+    write!(&mut uart_a, "PC:\t{:20x}\t", exception.pc).unwrap();
+    write!(&mut uart_a, "CPSR:\t{:20x}\t", exception.cpsr).unwrap();
+    write!(&mut uart_a, "ESR:\t{:20x}\r\n", exception.esr).unwrap();
 
-    for (index, value) in exception.x.iter_mut().enumerate()
-    {
-        // "X{}:"
-        // We do taht because {} is what is making us crashing, but {:x} is fine so we use it!
-        uart_a.put_char(88);
-        uart_a.put_u64(index as u64);
-        write!(&mut uart_a, ":\t{:20x}\t", *value);
+    for (index, value) in exception.x.iter_mut().enumerate() {
+        write!(&mut uart_a, "X{}:\t{:20x}\t", index, *value).unwrap();
 
         if (index % 3) == 0 {
-            write!(&mut uart_a, "\r\n");
+            write!(&mut uart_a, "\r\n").unwrap();
         }
     }
 }
@@ -176,8 +186,19 @@ unsafe fn dump_exception(exception: &mut ExceptionInfo) {
 #[no_mangle]
 unsafe extern "C" fn unhandled_vector(exception: &mut ExceptionInfo) {
     let mut uart_a = UART::A;
-    write!(&mut uart_a, "\r\n");
-    write!(&mut uart_a, "Unhandled vector!\r\n");
+    write!(&mut uart_a, "\r\n").unwrap();
+    write!(
+        &mut uart_a,
+        "Unhandled vector ({})\r\n",
+        get_exception_type_elx(exception.esr)
+    )
+    .unwrap();
+    write!(
+        &mut uart_a,
+        "Instruction Fault name: {}\r\n",
+        get_instruction_fault_name(exception.esr)
+    )
+    .unwrap();
 
     dump_exception(exception);
 
@@ -192,18 +213,56 @@ pub fn get_exception_type_elx(esr: u64) -> &'static str {
         0x22 => "PC alignment exception",
         0x25 => "Data abort",
         0x26 => "Stack alignment exception",
+        0x2f => "Serror",
         0x30 => "Debug exception",
-        _ => "Unknown exception"
+        _ => "Unknown exception",
+    }
+}
+
+pub fn get_instruction_fault_name(esr: u64) -> &'static str {
+    let exception_class = esr & 0x1f;
+
+    match exception_class {
+        0b000000 => "Address size fault in TTBR0 or TTBR1",
+        0b000101 => "Translation fault, 1st level",
+        0b000110 => "Translation fault, 2nd level",
+        0b000111 => "Translation fault, 3rd level",
+        0b001001 => "Access flag fault, 1st level",
+        0b001010 => "Access flag fault, 2nd level",
+        0b001011 => "Access flag fault, 3rd level",
+        0b001101 => "Permission fault, 1st level",
+        0b001110 => "Permission fault, 2nd level",
+        0b001111 => "Permission fault, 3rd level",
+        0b010000 => "Synchronous external abort",
+        0b011000 => "Synchronous parity error on memory access",
+        0b010101 => "Synchronous external abort on translation table walk, 1st level",
+        0b010110 => "Synchronous external abort on translation table walk, 2nd level",
+        0b010111 => "Synchronous external abort on translation table walk, 3rd level",
+        0b011101 => {
+            "Synchronous parity error on memory access on translation table walk, 1st level"
+        }
+        0b011110 => {
+            "Synchronous parity error on memory access on translation table walk, 2nd level"
+        }
+        0b011111 => {
+            "Synchronous parity error on memory access on translation table walk, 3rd level"
+        }
+        0b100001 => "Alignment fault",
+        0b100010 => "Debug event",
+        _ => "Unknown instruction fault",
     }
 }
 
 #[no_mangle]
 unsafe extern "C" fn current_elx_sync(exception: &mut ExceptionInfo) {
     let mut uart_a = UART::A;
-    write!(&mut uart_a, "\r\n");
-    write!(&mut uart_a, "Sync ELX Exception (");
-    uart_a.write_data(get_exception_type_elx(exception.esr).as_bytes());
-    write!(&mut uart_a, ")\r\n");
+    write!(&mut uart_a, "\r\n").unwrap();
+    write!(
+        &mut uart_a,
+        "Sync ELX Exception ({})\r\n",
+        get_exception_type_elx(exception.esr)
+    )
+    .unwrap();
     dump_exception(exception);
 
     rt::reboot_to_rcm();

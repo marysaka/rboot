@@ -13,3 +13,7 @@ log = "0.4.6"
 register = "0.3.2"
 static_assertions = "*"
 enum_primitive = { git = "https://github.com/roblabla/enum_primitive-rs.git", branch = "master"}
+
+[dependencies.num-traits]
+version = "0.2"
+default-features = false

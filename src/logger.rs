@@ -1,4 +1,4 @@
-use crate::tegra210::uart::{UARTRegister, UART};
+use crate::tegra210::uart::UART;
 use core::fmt::Write;
 use log::{Level, Metadata, Record};
 use log::{LevelFilter, SetLoggerError};
@@ -34,13 +34,13 @@ impl UARTLogger {
 
 impl log::Log for UARTLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        true
+        self.level >= metadata.level()
     }
 
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let mut uart = self.get_uart();
-            writeln!(&mut uart, "{} - {}\r", record.level(), record.args());
+            writeln!(&mut uart, "{} - {}\r", record.level(), record.args()).unwrap();
         }
     }
 
@@ -57,8 +57,6 @@ pub fn init(uart_type: Type, level: Level) -> Result<(), SetLoggerError> {
         LOGGER.set_type(uart_type);
         LOGGER.set_level(level);
 
-        // FIXME: This hang because of some unexpected behaviour of compare_and_swap
-        //log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
-        Ok(())
+        log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Trace))
     }
 }
