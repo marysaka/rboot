@@ -1,9 +1,7 @@
 #![allow(clippy::identity_op)]
 
+use crate::utils;
 use register::register_bitfields;
-
-use core::ops::{BitAnd, Not};
-use num_traits::Num;
 
 extern "C" {
     static mut __start_text__: u8;
@@ -78,8 +76,9 @@ static mut LVL1_TABLE: TableLVL1 = TableLVL1 {
     }; NUM_LVL1_ENTRIES],
 };
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum MemoryPermission {
+    Invalid,
     R,
     W,
     X,
@@ -223,7 +222,7 @@ register_bitfields! {u64,
     ]
 }
 
-mod mem_attr {
+pub mod mem_attr {
     // Device-nGnRnE (strongly ordered)
     pub const MMIO: u64 = 0;
 
@@ -232,14 +231,6 @@ mod mem_attr {
 
     // outer: non-cacheable, inner: non-cacheable
     pub const NORMAL_UNCACHED: u64 = 2;
-}
-
-pub fn align_up<T: Num + Not<Output = T> + BitAnd<Output = T> + Copy>(addr: T, align: T) -> T {
-    align_down(addr + (align - T::one()), align)
-}
-
-pub fn align_down<T: Num + Not<Output = T> + BitAnd<Output = T> + Copy>(addr: T, align: T) -> T {
-    addr & !(align - T::one())
 }
 
 fn create_lvl2_block_entry(vaddr: u64, paddr: u64, memory_attribute: u64) {
@@ -257,6 +248,7 @@ fn create_lvl2_block_entry(vaddr: u64, paddr: u64, memory_attribute: u64) {
     unsafe {
         LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] =
             (flags + STAGE2_BLOCK_DESCRIPTOR::ADDRESS_4K.val(paddr >> L2_INDEX_LSB)).value;
+        asm!("dsb sy" ::: "memory");
     };
 }
 
@@ -269,12 +261,14 @@ fn create_lvl2_table_entry(vaddr: u64, table_address: u64) {
 
     let flags = STAGE2_NEXTLEVEL_DESCRIPTOR::VALID::True + STAGE2_NEXTLEVEL_DESCRIPTOR::TYPE::Table;
     unsafe {
-        LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] =
-            (flags + STAGE2_NEXTLEVEL_DESCRIPTOR::ADDRESS_4K.val(table_address >> L3_INDEX_LSB)).value;
+        LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] = (flags
+            + STAGE2_NEXTLEVEL_DESCRIPTOR::ADDRESS_4K.val(table_address >> L3_INDEX_LSB))
+        .value;
+        asm!("dsb sy" ::: "memory");
     };
 }
 
-unsafe fn create_lvl3_page(vaddr: u64, paddr: u64, permission: MemoryPermission) {
+fn create_lvl3_page(vaddr: u64, paddr: u64, permission: MemoryPermission, memory_attribute: u64) {
     let lvl1_align_size = 1 << L1_INDEX_LSB;
     let lvl2_align_size = 1 << L2_INDEX_LSB;
     let lvl3_align_size = 1 << L3_INDEX_LSB;
@@ -284,13 +278,18 @@ unsafe fn create_lvl3_page(vaddr: u64, paddr: u64, permission: MemoryPermission)
     let lvl3_index = (vaddr / lvl3_align_size) as usize % ENTRIES_PER_LEVEL;
 
     // LVL2 entry is missing, add one
-    if LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] == 0 {
-        create_lvl2_table_entry(vaddr, &LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[0] as *const _ as u64);
+    unsafe {
+        if LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] == 0 {
+            create_lvl2_table_entry(
+                vaddr,
+                &LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[0] as *const _ as u64,
+            );
+        }
     }
 
     let mut flags = STAGE3_TABLE_DESCRIPTOR::VALID::True
         + STAGE3_TABLE_DESCRIPTOR::TYPE::Table
-        + STAGE3_TABLE_DESCRIPTOR::MEMORY_ATTR.val(mem_attr::NORMAL)
+        + STAGE3_TABLE_DESCRIPTOR::MEMORY_ATTR.val(memory_attribute)
         + STAGE3_TABLE_DESCRIPTOR::SH::InnerShareable
         + STAGE3_TABLE_DESCRIPTOR::AF::True;
 
@@ -307,38 +306,93 @@ unsafe fn create_lvl3_page(vaddr: u64, paddr: u64, permission: MemoryPermission)
         MemoryPermission::RX | MemoryPermission::X => {
             flags + STAGE3_TABLE_DESCRIPTOR::AP::RO_CURRENT_EL + STAGE3_TABLE_DESCRIPTOR::XN::False
         }
+        _ => flags,
     };
 
-    LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[lvl3_index] = (flags + STAGE3_TABLE_DESCRIPTOR::ADDRESS.val(paddr >> PAGE_GRANULE)).value;
-    asm!("dmb sy" ::: "memory");
+    unsafe {
+        let value = if permission == MemoryPermission::Invalid {
+            0
+        } else {
+            (flags + STAGE3_TABLE_DESCRIPTOR::ADDRESS.val(paddr >> PAGE_GRANULE)).value
+        };
+
+        LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[lvl3_index] = value;
+        asm!("dsb sy" ::: "memory");
+    };
 }
 
-pub unsafe fn map_normal_page(vaddr: u64, paddr: u64, size: u64, permission: MemoryPermission) {
+pub fn map_normal_page(vaddr: u64, paddr: u64, size: u64, permission: MemoryPermission) {
+    map_page(vaddr, paddr, size, permission, mem_attr::NORMAL)
+}
+
+pub fn map_page(vaddr: u64, paddr: u64, size: u64, permission: MemoryPermission, memory_attribute: u64) {
     if size == 0 {
         return;
     }
 
     let lvl3_align_size = 1 << L3_INDEX_LSB;
-    let size = align_up(size, lvl3_align_size);
+    let size = utils::align_up(size, lvl3_align_size);
 
-    let mut vaddr = align_down(vaddr, lvl3_align_size);
-    let mut paddr = align_down(paddr, lvl3_align_size);
+    let mut vaddr = utils::align_down(vaddr, lvl3_align_size);
+    let mut paddr = utils::align_down(paddr, lvl3_align_size);
     let mut page_count = size / lvl3_align_size;
 
     while page_count != 0 {
-        create_lvl3_page(vaddr, paddr, permission);
+        create_lvl3_page(vaddr, paddr, permission, memory_attribute);
         vaddr += lvl3_align_size;
         paddr += lvl3_align_size;
         page_count -= 1;
     }
+
+    // TLB maintenance
+    // TODO: EL2 & EL3
+    unsafe {
+        asm!("dsb sy" :::: "volatile");
+        asm!("isb" :::: "volatile");
+
+        asm!("tlbi vmalle1" :::: "volatile");
+
+        asm!("dsb sy" :::: "volatile");
+        asm!("isb" :::: "volatile");
+    };
+}
+
+pub fn unmap_page(vaddr: u64, size: u64) {
+    if size == 0 {
+        return;
+    }
+
+    let lvl3_align_size = 1 << L3_INDEX_LSB;
+    let size = utils::align_up(size, lvl3_align_size);
+
+    let mut vaddr = utils::align_down(vaddr, lvl3_align_size);
+    let mut page_count = size / lvl3_align_size;
+
+    while page_count != 0 {
+        create_lvl3_page(vaddr, 0, MemoryPermission::Invalid, mem_attr::NORMAL);
+        vaddr += lvl3_align_size;
+        page_count -= 1;
+    }
+
+    // TLB maintenance
+    // TODO: EL2 & EL3
+    unsafe {
+        asm!("dsb sy" :::: "volatile");
+        asm!("isb" :::: "volatile");
+
+        asm!("tlbi vmalle1" :::: "volatile");
+
+        asm!("dsb sy" :::: "volatile");
+        asm!("isb" :::: "volatile");
+    };
 }
 
 fn map_lvl2_block(vaddr: u64, paddr: u64, size: u64, memory_attribute: u64) {
     let lvl2_align_size = 1 << L2_INDEX_LSB;
-    let size = align_up(size, lvl2_align_size);
+    let size = utils::align_up(size, lvl2_align_size);
 
-    let mut vaddr = align_down(vaddr, lvl2_align_size);
-    let mut paddr = align_down(paddr, lvl2_align_size);
+    let mut vaddr = utils::align_down(vaddr, lvl2_align_size);
+    let mut paddr = utils::align_down(paddr, lvl2_align_size);
     let mut page_count = size / lvl2_align_size;
 
     while page_count != 0 {
@@ -356,7 +410,7 @@ unsafe fn init_executable_mapping() {
         text_start,
         text_start,
         text_end - text_start,
-        MemoryPermission::RX,
+        MemoryPermission::RX
     );
 
     let ro_start = &__start_ro__ as *const _ as u64;
@@ -369,7 +423,7 @@ unsafe fn init_executable_mapping() {
         data_start,
         data_start,
         data_end - data_start,
-        MemoryPermission::RW,
+        MemoryPermission::RW
     );
 
     let bss_start = &__start_bss__ as *const _ as u64;
@@ -378,7 +432,7 @@ unsafe fn init_executable_mapping() {
         bss_start,
         bss_start,
         bss_end - bss_start,
-        MemoryPermission::RW,
+        MemoryPermission::RW
     );
 
     // Setup our stack
@@ -388,7 +442,7 @@ unsafe fn init_executable_mapping() {
         stack_start,
         stack_start,
         stack_end - stack_start,
-        MemoryPermission::RW,
+        MemoryPermission::RW
     );
 
     // Also setup the exception vector
@@ -398,27 +452,30 @@ unsafe fn init_executable_mapping() {
         vectors_start,
         vectors_start,
         vectors_end - vectors_start,
-        MemoryPermission::RX,
+        MemoryPermission::RX
     );
 }
 
-unsafe fn init_page_mapping() {
+fn init_page_mapping() {
     let common_flags = STAGE1_NEXTLEVEL_DESCRIPTOR::VALID::True
         + STAGE1_NEXTLEVEL_DESCRIPTOR::TYPE::Table
         + STAGE1_NEXTLEVEL_DESCRIPTOR::NS::True;
 
     // Setup LVL1 entries
-    for (lvl1_index, lvl1_entry) in LVL1_TABLE
-        .entries
-        .iter_mut()
-        .enumerate()
-        .take(NUM_LVL1_ENTRIES)
-    {
-        let address = &LVL1_TABLE.lvl2[lvl1_index].entries[0] as *const _ as u64 >> PAGE_GRANULE;
-        *lvl1_entry = (common_flags + STAGE1_NEXTLEVEL_DESCRIPTOR::ADDRESS_4K.val(address)).value;
+    unsafe {
+        for (lvl1_index, lvl1_entry) in LVL1_TABLE
+            .entries
+            .iter_mut()
+            .enumerate()
+            .take(NUM_LVL1_ENTRIES)
+        {
+            let address =
+                &LVL1_TABLE.lvl2[lvl1_index].entries[0] as *const _ as u64 >> PAGE_GRANULE;
+            *lvl1_entry =
+                (common_flags + STAGE1_NEXTLEVEL_DESCRIPTOR::ADDRESS_4K.val(address)).value;
+        }
+        init_executable_mapping();
     }
-
-    init_executable_mapping();
 
     // map some MMIOs
     const MMIO_RANGE_SIZE: u64 = 0x200000;
@@ -489,7 +546,7 @@ pub unsafe fn setup() {
             (1 << 3)  |    // SA, Stack Alignment Check Enable
             (1 << 2)  |    // C, Data cache enable. This is an enable bit for data caches at EL0 and EL1
             (1 << 1)  |    // A, Alignment check enable bit
-            (1 << 0);      // set M, enable MMU
+            (1 << 0); // set M, enable MMU
 
     asm!("msr sctlr_el1, $0" :: "r"(ctrl) :: "volatile");
 

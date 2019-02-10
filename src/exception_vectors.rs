@@ -191,12 +191,14 @@ unsafe extern "C" fn unhandled_vector(exception: &mut ExceptionInfo) {
         &mut uart_a,
         "Unhandled vector ({})\r",
         get_exception_type_elx(exception.esr)
-    ).ok();
+    )
+    .ok();
     writeln!(
         &mut uart_a,
         "Instruction Fault name: {}\r",
         get_instruction_fault_name(exception.esr)
-    ).ok();
+    )
+    .ok();
 
     dump_exception(exception);
 
@@ -259,7 +261,8 @@ unsafe extern "C" fn current_elx_sync(exception: &mut ExceptionInfo) {
         &mut uart_a,
         "Sync ELX Exception ({})\r",
         get_exception_type_elx(exception.esr)
-    ).ok();
+    )
+    .ok();
     dump_exception(exception);
 
     rt::reboot_to_rcm();
