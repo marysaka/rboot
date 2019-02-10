@@ -40,7 +40,7 @@ impl log::Log for UARTLogger {
     fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let mut uart = self.get_uart();
-            writeln!(&mut uart, "{} - {}\r", record.level(), record.args()).unwrap();
+            writeln!(&mut uart, "{} - {}\r", record.level(), record.args()).ok();
         }
     }
 

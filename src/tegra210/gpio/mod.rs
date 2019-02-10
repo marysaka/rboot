@@ -208,5 +208,3 @@ pub struct GpioCtlr {
 }
 
 assert_eq_size!(pp; GpioCtlr, [u8; 0x800]);
-
-//pub fn get_config(gpio:)

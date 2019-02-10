@@ -2,14 +2,14 @@
 
 use register::register_bitfields;
 
-use crate::tegra210::uart::UART;
-use core::fmt::Write;
 use core::ops::{BitAnd, Not};
 use num_traits::Num;
 
 extern "C" {
     static mut __start_text__: u8;
     static mut __end_text__: u8;
+    static mut __start_vectors__: u8;
+    static mut __end_vectors__: u8;
     static mut __start_ro__: u8;
     static mut __end_ro__: u8;
     static mut __start_data__: u8;
@@ -75,6 +75,7 @@ static mut LVL1_TABLE: TableLVL1 = TableLVL1 {
     }; NUM_LVL1_ENTRIES],
 };
 
+#[derive(Copy, Clone)]
 pub enum MemoryPermission {
     R,
     W,
@@ -253,21 +254,76 @@ fn create_lvl2_block_entry(vaddr: u64, paddr: u64, memory_attribute: u64) {
 }
 
 fn create_lvl2_table_entry(vaddr: u64, table_address: u64) {
-    let mut uart_a = &mut UART::A;
     let lvl1_align_size = 1 << L1_INDEX_LSB;
     let lvl2_align_size = 1 << L2_INDEX_LSB;
 
     let lvl1_index = (vaddr / lvl1_align_size) as usize % NUM_LVL1_ENTRIES;
     let lvl2_index = (vaddr / lvl2_align_size) as usize % NUM_ENTRIES_4KIB;
 
-    writeln!(&mut uart_a, "lvl1_index: 0x{:x}\r", lvl1_index).unwrap();
-    writeln!(&mut uart_a, "lvl2_index: 0x{:x}\r", lvl2_index).unwrap();
-
     let flags = STAGE2_NEXTLEVEL_DESCRIPTOR::VALID::True + STAGE2_NEXTLEVEL_DESCRIPTOR::TYPE::Table;
     unsafe {
         LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] =
             (flags + STAGE2_NEXTLEVEL_DESCRIPTOR::ADDRESS.val(table_address >> L3_INDEX_LSB)).value;
     };
+}
+
+pub unsafe fn create_lvl3_page(vaddr: u64, paddr: u64, permission: MemoryPermission) {
+    let lvl1_align_size = 1 << L1_INDEX_LSB;
+    let lvl2_align_size = 1 << L2_INDEX_LSB;
+    let lvl3_align_size = 1 << L3_INDEX_LSB;
+
+    let lvl1_index = (vaddr / lvl1_align_size) as usize % NUM_LVL1_ENTRIES;
+    let lvl2_index = (vaddr / lvl2_align_size) as usize % NUM_ENTRIES_4KIB;
+    let lvl3_index = (vaddr / lvl3_align_size) as usize % NUM_ENTRIES_4KIB;
+
+    // LVL2 entry is missing, add one
+    if LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] == 0 {
+        create_lvl2_table_entry(vaddr, &LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[0] as *const _ as u64);
+    }
+
+    let mut flags = STAGE3_TABLE_DESCRIPTOR::VALID::True
+        + STAGE3_TABLE_DESCRIPTOR::TYPE::Table
+        + STAGE3_TABLE_DESCRIPTOR::MEMORY_ATTR.val(mem_attr::NORMAL)
+        + STAGE3_TABLE_DESCRIPTOR::SH::InnerShareable
+        + STAGE3_TABLE_DESCRIPTOR::AF::True;
+
+    flags = match permission {
+        MemoryPermission::R => {
+            flags + STAGE3_TABLE_DESCRIPTOR::AP::RO_CURRENT_EL + STAGE3_TABLE_DESCRIPTOR::XN::True
+        }
+        MemoryPermission::RW | MemoryPermission::W => {
+            flags + STAGE3_TABLE_DESCRIPTOR::AP::RW_CURRENT_EL + STAGE3_TABLE_DESCRIPTOR::XN::True
+        }
+        MemoryPermission::RWX => {
+            flags + STAGE3_TABLE_DESCRIPTOR::AP::RW_CURRENT_EL + STAGE3_TABLE_DESCRIPTOR::XN::False
+        }
+        MemoryPermission::RX | MemoryPermission::X => {
+            flags + STAGE3_TABLE_DESCRIPTOR::AP::RO_CURRENT_EL + STAGE3_TABLE_DESCRIPTOR::XN::False
+        }
+    };
+
+    LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[lvl3_index] = (flags + STAGE3_TABLE_DESCRIPTOR::ADDRESS.val(paddr >> 12)).value;
+    asm!("dmb sy" ::: "memory");
+}
+
+pub unsafe fn map_normal_page(vaddr: u64, paddr: u64, size: u64, permission: MemoryPermission) {
+    if size == 0 {
+        return;
+    }
+
+    let lvl3_align_size = 1 << L3_INDEX_LSB;
+    let size = align_up(size, lvl3_align_size);
+
+    let mut vaddr = align_down(vaddr, lvl3_align_size);
+    let mut paddr = align_down(paddr, lvl3_align_size);
+    let mut page_count = size / lvl3_align_size;
+
+    while page_count != 0 {
+        create_lvl3_page(vaddr, paddr, permission);
+        vaddr += lvl3_align_size;
+        paddr += lvl3_align_size;
+        page_count -= 1;
+    }
 }
 
 fn map_lvl2_block(vaddr: u64, paddr: u64, size: u64, memory_attribute: u64) {
@@ -278,15 +334,65 @@ fn map_lvl2_block(vaddr: u64, paddr: u64, size: u64, memory_attribute: u64) {
     let mut paddr = align_down(paddr, lvl2_align_size);
     let mut page_count = size / lvl2_align_size;
 
-    let mut uart_a = &mut UART::A;
-    writeln!(&mut uart_a, "page_count: 0x{:x}\r", page_count).unwrap();
-
     while page_count != 0 {
         create_lvl2_block_entry(vaddr, paddr, memory_attribute);
         vaddr += lvl2_align_size;
         paddr += lvl2_align_size;
         page_count -= 1;
     }
+}
+
+unsafe fn init_executable_mapping() {
+    let text_start = &__start_text__ as *const _ as u64;
+    let text_end = &__end_text__ as *const _ as u64;
+    map_normal_page(
+        text_start,
+        text_start,
+        text_end - text_start,
+        MemoryPermission::RX,
+    );
+
+    let ro_start = &__start_ro__ as *const _ as u64;
+    let ro_end = &__end_ro__ as *const _ as u64;
+    map_normal_page(ro_start, ro_start, ro_end - ro_start, MemoryPermission::R);
+
+    let data_start = &__start_data__ as *const _ as u64;
+    let data_end = &__end_data__ as *const _ as u64;
+    map_normal_page(
+        data_start,
+        data_start,
+        data_end - data_start,
+        MemoryPermission::RW,
+    );
+
+    let bss_start = &__start_bss__ as *const _ as u64;
+    let bss_end = &__end_bss__ as *const _ as u64;
+    map_normal_page(
+        bss_start,
+        bss_start,
+        bss_end - bss_start,
+        MemoryPermission::RW,
+    );
+
+    // Setup our stack
+    let stack_start = &_stack_bottom as *const _ as u64;
+    let stack_end = &_stack_top as *const _ as u64;
+    map_normal_page(
+        stack_start,
+        stack_start,
+        stack_end - stack_start,
+        MemoryPermission::RW,
+    );
+
+    // Also setup the exception vector
+    let vectors_start = &__start_vectors__ as *const _ as u64;
+    let vectors_end = &__end_vectors__ as *const _ as u64;
+    map_normal_page(
+        vectors_start,
+        vectors_start,
+        vectors_end - vectors_start,
+        MemoryPermission::RX,
+    );
 }
 
 pub unsafe fn init_page_mapping() {
@@ -305,12 +411,7 @@ pub unsafe fn init_page_mapping() {
         *lvl1_entry = (common_flags + STAGE1_NEXTLEVEL_DESCRIPTOR::ADDRESS.val(address)).value;
     }
 
-    // We setup one page of 2MB, we don't need more.
-    // TODO: fix LVL3 to map by page of 4KB
-    let text_start = &__start_text__ as *const _ as u64;
-
-    let base_addr = align_down(text_start, 1 << L2_INDEX_LSB);
-    map_lvl2_block(base_addr, base_addr, 1 << L2_INDEX_LSB, mem_attr::NORMAL);
+    init_executable_mapping();
 
     // map some MMIOs
     const MMIO_RANGE_SIZE: u64 = 0x200000;
@@ -384,79 +485,11 @@ pub unsafe fn setup() {
             (1 << 3)  |    // SA, Stack Alignment Check Enable
             (1 << 2)  |    // C, Data cache enable. This is an enable bit for data caches at EL0 and EL1
             (1 << 1)  |    // A, Alignment check enable bit
-            (1 << 0); // set M, enable MMU
+            (1 << 0);      // set M, enable MMU
 
     asm!("msr sctlr_el1, $0" :: "r"(ctrl) :: "volatile");
 
     // and hope that it's okayish
     asm!("dsb sy");
     asm!("isb");
-}
-
-pub unsafe fn map_normal_page(vaddr: u64, paddr: u64, len: u64, permission: MemoryPermission) {
-    if len == 0 {
-        return;
-    }
-
-    let mut uart_a = &mut UART::A;
-
-    let lvl2_align_size = 1 << L2_INDEX_LSB;
-    let page_align_size = 1 << L3_INDEX_LSB;
-
-    let paddr = align_down(paddr, page_align_size);
-    let vaddr_page_align = align_down(vaddr, page_align_size);
-    let vaddr_page_align_end = align_up(vaddr_page_align + len, page_align_size);
-
-    let raw_lvl2_index = (align_down(vaddr, lvl2_align_size) / lvl2_align_size) as usize;
-    let lvl1_index = (raw_lvl2_index / NUM_ENTRIES_4KIB) % NUM_LVL1_ENTRIES;
-
-    let raw_lvl3_index = (vaddr_page_align / page_align_size) as usize;
-    let lvl2_index = (raw_lvl3_index / NUM_ENTRIES_4KIB) % NUM_ENTRIES_4KIB;
-    let lvl3_index_start = (raw_lvl3_index % NUM_ENTRIES_4KIB) % NUM_ENTRIES_4KIB;
-    let lvl3_index_end =
-        (((vaddr_page_align_end / page_align_size) as usize) % NUM_ENTRIES_4KIB) % NUM_ENTRIES_4KIB;
-
-    writeln!(&mut uart_a, "vaddr :0x{:x}\r", vaddr).unwrap();
-    writeln!(&mut uart_a, "size :0x{:x}\r", len).unwrap();
-    writeln!(
-        &mut uart_a,
-        "size (aligned): 0x{:x}\r",
-        (lvl3_index_end - lvl3_index_start) * 4096
-    )
-    .unwrap();
-    writeln!(&mut uart_a, "LVL1[0x{:x}]\r", lvl1_index).unwrap();
-    writeln!(&mut uart_a, "LVL2[0x{:x}]\r", lvl2_index).unwrap();
-    writeln!(&mut uart_a, "LVL3_START[0x{:x}]\r", lvl3_index_start).unwrap();
-    writeln!(&mut uart_a, "LVL3_END[0x{:x}]\r", lvl3_index_end).unwrap();
-
-    let mut flags = STAGE3_TABLE_DESCRIPTOR::VALID::True
-        + STAGE3_TABLE_DESCRIPTOR::TYPE::Table
-        + STAGE3_TABLE_DESCRIPTOR::MEMORY_ATTR.val(mem_attr::NORMAL)
-        + STAGE3_TABLE_DESCRIPTOR::SH::InnerShareable
-        + STAGE3_TABLE_DESCRIPTOR::AF::True;
-
-    flags = match permission {
-        MemoryPermission::R => {
-            flags + STAGE3_TABLE_DESCRIPTOR::AP::RO_CURRENT_EL + STAGE3_TABLE_DESCRIPTOR::XN::True
-        }
-        MemoryPermission::RW | MemoryPermission::W => {
-            flags + STAGE3_TABLE_DESCRIPTOR::AP::RW_CURRENT_EL + STAGE3_TABLE_DESCRIPTOR::XN::True
-        }
-        MemoryPermission::RWX => {
-            flags + STAGE3_TABLE_DESCRIPTOR::AP::RW_CURRENT_EL + STAGE3_TABLE_DESCRIPTOR::XN::False
-        }
-        MemoryPermission::RX | MemoryPermission::X => {
-            flags + STAGE3_TABLE_DESCRIPTOR::AP::RO_CURRENT_EL + STAGE3_TABLE_DESCRIPTOR::XN::False
-        }
-    };
-
-    let mut x = 0;
-    for i in lvl3_index_start..lvl3_index_end {
-        writeln!(&mut uart_a, "LVL3[0x{:x}]\r", i).unwrap();
-        let addr = (paddr + (x * page_align_size)) >> 12;
-        writeln!(&mut uart_a, "0x{:x}\r", addr).unwrap();
-        LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[i] =
-            (flags + STAGE3_TABLE_DESCRIPTOR::ADDRESS.val(addr)).value;
-        x += 1;
-    }
 }

@@ -5,6 +5,9 @@ use core::ptr;
 
 use crate::exception_vectors;
 use crate::mmu;
+use crate::tegra210;
+
+use core::fmt::Write;
 
 #[macro_export]
 macro_rules! entry {
@@ -20,7 +23,9 @@ macro_rules! entry {
 }
 
 #[panic_handler]
-fn panic(_panic_info: &PanicInfo<'_>) -> ! {
+fn panic(panic_info: &PanicInfo<'_>) -> ! {
+    let mut uart_a = &mut tegra210::uart::UART::A;
+    writeln!(&mut uart_a, "PANIC: {}\r", panic_info).ok();
     unsafe {
         reboot_to_rcm();
     };

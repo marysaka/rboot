@@ -168,17 +168,17 @@ struct ExceptionInfo {
 unsafe fn dump_exception(exception: &mut ExceptionInfo) {
     let mut uart_a = UART::A;
 
-    write!(&mut uart_a, "Fault address:\t{:20x}\r\n", exception.far).unwrap();
-    write!(&mut uart_a, "Register dump:\r\n").unwrap();
-    write!(&mut uart_a, "PC:\t{:20x}\t", exception.pc).unwrap();
-    write!(&mut uart_a, "CPSR:\t{:20x}\t", exception.cpsr).unwrap();
-    write!(&mut uart_a, "ESR:\t{:20x}\r\n", exception.esr).unwrap();
+    writeln!(&mut uart_a, "Fault address:\t{:20x}\r", exception.far).ok();
+    writeln!(&mut uart_a, "Register dump:\r").ok();
+    writeln!(&mut uart_a, "PC:\t{:20x}\t", exception.pc).ok();
+    writeln!(&mut uart_a, "CPSR:\t{:20x}\t", exception.cpsr).ok();
+    writeln!(&mut uart_a, "ESR:\t{:20x}\r", exception.esr).ok();
 
     for (index, value) in exception.x.iter_mut().enumerate() {
-        write!(&mut uart_a, "X{}:\t{:20x}\t", index, *value).unwrap();
+        write!(&mut uart_a, "X{}:\t{:20x}\t", index, *value).ok();
 
         if (index % 3) == 0 {
-            write!(&mut uart_a, "\r\n").unwrap();
+            writeln!(&mut uart_a, "\r").ok();
         }
     }
 }
@@ -186,19 +186,17 @@ unsafe fn dump_exception(exception: &mut ExceptionInfo) {
 #[no_mangle]
 unsafe extern "C" fn unhandled_vector(exception: &mut ExceptionInfo) {
     let mut uart_a = UART::A;
-    write!(&mut uart_a, "\r\n").unwrap();
-    write!(
+    writeln!(&mut uart_a, "\r").ok();
+    writeln!(
         &mut uart_a,
-        "Unhandled vector ({})\r\n",
+        "Unhandled vector ({})\r",
         get_exception_type_elx(exception.esr)
-    )
-    .unwrap();
-    write!(
+    ).ok();
+    writeln!(
         &mut uart_a,
-        "Instruction Fault name: {}\r\n",
+        "Instruction Fault name: {}\r",
         get_instruction_fault_name(exception.esr)
-    )
-    .unwrap();
+    ).ok();
 
     dump_exception(exception);
 
@@ -256,13 +254,12 @@ pub fn get_instruction_fault_name(esr: u64) -> &'static str {
 #[no_mangle]
 unsafe extern "C" fn current_elx_sync(exception: &mut ExceptionInfo) {
     let mut uart_a = UART::A;
-    write!(&mut uart_a, "\r\n").unwrap();
-    write!(
+    writeln!(&mut uart_a, "\r").ok();
+    writeln!(
         &mut uart_a,
-        "Sync ELX Exception ({})\r\n",
+        "Sync ELX Exception ({})\r",
         get_exception_type_elx(exception.esr)
-    )
-    .unwrap();
+    ).ok();
     dump_exception(exception);
 
     rt::reboot_to_rcm();

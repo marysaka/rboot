@@ -10,8 +10,7 @@ MEMORY
 SECTIONS
 {
 	. = ORIGIN(CBOOT_FAUX_KERNEL);
-	.text ALIGN(4K) :
-	{
+	.text ALIGN(4K) : {
 		__start_text__ = .;
 
 		KEEP(*(.text.boot))
@@ -20,24 +19,25 @@ SECTIONS
 		__end_text__ = .;
 	} >CBOOT_FAUX_KERNEL
 
-	.vectors ALIGN(2K): { *(.vectors) } >CBOOT_FAUX_KERNEL
+	.vectors ALIGN(4K): {
+		__start_vectors__ = .;
+		*(.vectors .vectors.*)
+		__end_vectors__ = .;
+	} >CBOOT_FAUX_KERNEL
 
-	.rodata ALIGN(4K) :
-	{
+	.rodata ALIGN(4K) : {
 		__start_ro__ = .;
-		*(.rodata)
+		*(.rodata .rodata.*)
 		__end_ro__ = .;
 	} >CBOOT_FAUX_KERNEL
 
-	.data ALIGN(4K) :
-	{
+	.data ALIGN(4K) : {
 		__start_data__ = .;
-		*(.data)
+		*(.data .data.*)
 		__end_data__ = .;
 	} >CBOOT_FAUX_KERNEL
 
-	.bss ALIGN(4K) :
-	{
+	.bss ALIGN(4K) : {
 		__start_bss__ = .;
 
 		*(.bss .bss.*)
@@ -47,8 +47,7 @@ SECTIONS
 		__end_bss__ = .;
 	} >CBOOT_FAUX_KERNEL
 
-	.stack ALIGN(4K) :
-	{
+	.stack ALIGN(4K) : {
 		. = ALIGN(16);
 		_stack_bottom = .;
 		. = . + 0x1000; /* 4kB of stack memory */

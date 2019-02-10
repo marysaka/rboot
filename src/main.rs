@@ -25,8 +25,6 @@ pub mod mmu;
 pub mod rt;
 pub mod tegra210;
 
-use core::fmt::Write;
-
 use crate::tegra210::board;
 use crate::tegra210::*;
 
@@ -62,24 +60,24 @@ extern "C" {
 }
 
 fn log_init() {
-    let mut uart_a = &mut uart::UART::A;
+    let uart_a = &uart::UART::A;
     uart_a.init(115_200);
 
-    let res = logger::init(logger::Type::A, Level::Trace);
-
-    writeln!(&mut uart_a, "{:?}\r", res).unwrap();
+    logger::init(logger::Type::A, Level::Trace).unwrap();
 }
 
 fn main() {
     pinmux_init();
     log_init();
 
+    info!("Hello World");
+
     let current_el: u32;
     unsafe { asm!("mrs $0, CurrentEL" : "=r"(current_el) ::: "volatile") }
-    info!("Executing in EL: {}", current_el >> 2);
+    trace!("Executing in EL: {}", current_el >> 2);
 
     let core_id: u64;
     unsafe { asm!("mrs $0, mpidr_el1" : "=r"(core_id) ::: "volatile") }
 
-    info!("Core id: {}", core_id & 0x3);
+    trace!("Core id: {}", core_id & 0x3);
 }
