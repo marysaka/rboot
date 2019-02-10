@@ -20,12 +20,15 @@ extern "C" {
     static _stack_top: u8;
 }
 
-const PAGE_GRANULE: usize = 12; // 4K
+const PAGE_GRANULE_4K: usize = 12;
+const PAGE_GRANULE_16K: usize = 14;
+const PAGE_GRANULE_64K: usize = 16;
+
+const PAGE_GRANULE: usize = PAGE_GRANULE_4K;
 
 const ENTRY_SHIFT: usize = 3;
 const ENTRIES_PER_LEVEL_BITS: usize = PAGE_GRANULE - ENTRY_SHIFT;
 const ENTRIES_PER_LEVEL: usize = 1 << ENTRIES_PER_LEVEL_BITS;
-const NUM_ENTRIES_4KIB: usize = ENTRIES_PER_LEVEL;
 
 const L3_INDEX_LSB: usize = PAGE_GRANULE;
 const L2_INDEX_LSB: usize = L3_INDEX_LSB + ENTRIES_PER_LEVEL_BITS;
@@ -39,21 +42,21 @@ const LVL2_ENTRY_SIZE: usize = 1 << (TARGET_BITS - L2_INDEX_LSB);
 const LVL3_ENTRY_SIZE: usize = 1 << (TARGET_BITS - L3_INDEX_LSB);
 
 const NUM_LVL1_ENTRIES: usize = 1 << (TARGET_BITS - L1_INDEX_LSB);
-const NUM_LVL2_ENTRIES: usize = LVL2_ENTRY_SIZE / 512;
-const NUM_LVL3_ENTRIES: usize = LVL3_ENTRY_SIZE / 8;
+const NUM_LVL2_ENTRIES: usize = LVL2_ENTRY_SIZE / ENTRIES_PER_LEVEL;
+const NUM_LVL3_ENTRIES: usize = LVL3_ENTRY_SIZE / NUM_LVL1_ENTRIES;
 
 #[repr(C)]
 #[repr(align(4096))]
 #[derive(Copy, Clone)]
 struct TableLVL3 {
-    entries: [u64; NUM_ENTRIES_4KIB],
+    entries: [u64; ENTRIES_PER_LEVEL],
 }
 
 #[repr(C)]
 #[repr(align(4096))]
 #[derive(Copy, Clone)]
 struct TableLVL2 {
-    entries: [u64; NUM_ENTRIES_4KIB],
+    entries: [u64; ENTRIES_PER_LEVEL],
     lvl3: [TableLVL3; NUM_LVL1_ENTRIES],
 }
 
@@ -61,16 +64,16 @@ struct TableLVL2 {
 #[repr(align(4096))]
 #[derive(Copy, Clone)]
 struct TableLVL1 {
-    entries: [u64; NUM_ENTRIES_4KIB],
+    entries: [u64; NUM_LVL1_ENTRIES],
     lvl2: [TableLVL2; NUM_LVL1_ENTRIES],
 }
 
 static mut LVL1_TABLE: TableLVL1 = TableLVL1 {
-    entries: [0x0; /*NUM_LVL1_ENTRIES*/ NUM_ENTRIES_4KIB],
+    entries: [0x0; NUM_LVL1_ENTRIES],
     lvl2: [TableLVL2 {
-        entries: [0x0; NUM_ENTRIES_4KIB],
+        entries: [0x0; ENTRIES_PER_LEVEL],
         lvl3: [TableLVL3 {
-            entries: [0x0; NUM_ENTRIES_4KIB],
+            entries: [0x0; ENTRIES_PER_LEVEL],
         }; NUM_LVL1_ENTRIES],
     }; NUM_LVL1_ENTRIES],
 };
@@ -88,16 +91,16 @@ pub enum MemoryPermission {
 register_bitfields! {u64,
     STAGE1_NEXTLEVEL_DESCRIPTOR [
         VALID OFFSET(0) NUMBITS(1) [
-            False = 0,
             True = 1
         ],
 
         TYPE OFFSET(1) NUMBITS(1) [
-            Block = 0,
             Table = 1
         ],
 
-        ADDRESS OFFSET(12) NUMBITS(36) [],
+        ADDRESS_4K OFFSET(12) NUMBITS(36) [],
+        ADDRESS_16K OFFSET(14) NUMBITS(34) [],
+        ADDRESS_64K OFFSET(16) NUMBITS(32) [],
 
         PXN OFFSET(59) NUMBITS(1) [
             False = 0,
@@ -152,7 +155,9 @@ register_bitfields! {u64,
             True = 1
         ],
 
-        ADDRESS OFFSET(21) NUMBITS(27) [],
+        ADDRESS_4K OFFSET(21) NUMBITS(27) [],
+        ADDRESS_16K OFFSET(25) NUMBITS(23) [],
+        ADDRESS_64K OFFSET(29) NUMBITS(19) [],
 
         CONTIGUOUS OFFSET(52) NUMBITS(1) [],
 
@@ -174,7 +179,9 @@ register_bitfields! {u64,
             Table = 1
         ],
 
-        ADDRESS OFFSET(12) NUMBITS(36) []
+        ADDRESS_4K OFFSET(12) NUMBITS(36) [],
+        ADDRESS_16K OFFSET(14) NUMBITS(34) [],
+        ADDRESS_64K OFFSET(16) NUMBITS(32) []
     ]
 }
 
@@ -240,7 +247,7 @@ fn create_lvl2_block_entry(vaddr: u64, paddr: u64, memory_attribute: u64) {
     let lvl2_align_size = 1 << L2_INDEX_LSB;
 
     let lvl1_index = (vaddr / lvl1_align_size) as usize % NUM_LVL1_ENTRIES;
-    let lvl2_index = (vaddr / lvl2_align_size) as usize % NUM_ENTRIES_4KIB;
+    let lvl2_index = (vaddr / lvl2_align_size) as usize % ENTRIES_PER_LEVEL;
 
     let flags = STAGE2_BLOCK_DESCRIPTOR::VALID::True
         + STAGE2_BLOCK_DESCRIPTOR::TYPE::Block
@@ -249,7 +256,7 @@ fn create_lvl2_block_entry(vaddr: u64, paddr: u64, memory_attribute: u64) {
         + STAGE2_BLOCK_DESCRIPTOR::SH::InnerShareable;
     unsafe {
         LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] =
-            (flags + STAGE2_BLOCK_DESCRIPTOR::ADDRESS.val(paddr >> L2_INDEX_LSB)).value;
+            (flags + STAGE2_BLOCK_DESCRIPTOR::ADDRESS_4K.val(paddr >> L2_INDEX_LSB)).value;
     };
 }
 
@@ -258,23 +265,23 @@ fn create_lvl2_table_entry(vaddr: u64, table_address: u64) {
     let lvl2_align_size = 1 << L2_INDEX_LSB;
 
     let lvl1_index = (vaddr / lvl1_align_size) as usize % NUM_LVL1_ENTRIES;
-    let lvl2_index = (vaddr / lvl2_align_size) as usize % NUM_ENTRIES_4KIB;
+    let lvl2_index = (vaddr / lvl2_align_size) as usize % ENTRIES_PER_LEVEL;
 
     let flags = STAGE2_NEXTLEVEL_DESCRIPTOR::VALID::True + STAGE2_NEXTLEVEL_DESCRIPTOR::TYPE::Table;
     unsafe {
         LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] =
-            (flags + STAGE2_NEXTLEVEL_DESCRIPTOR::ADDRESS.val(table_address >> L3_INDEX_LSB)).value;
+            (flags + STAGE2_NEXTLEVEL_DESCRIPTOR::ADDRESS_4K.val(table_address >> L3_INDEX_LSB)).value;
     };
 }
 
-pub unsafe fn create_lvl3_page(vaddr: u64, paddr: u64, permission: MemoryPermission) {
+unsafe fn create_lvl3_page(vaddr: u64, paddr: u64, permission: MemoryPermission) {
     let lvl1_align_size = 1 << L1_INDEX_LSB;
     let lvl2_align_size = 1 << L2_INDEX_LSB;
     let lvl3_align_size = 1 << L3_INDEX_LSB;
 
     let lvl1_index = (vaddr / lvl1_align_size) as usize % NUM_LVL1_ENTRIES;
-    let lvl2_index = (vaddr / lvl2_align_size) as usize % NUM_ENTRIES_4KIB;
-    let lvl3_index = (vaddr / lvl3_align_size) as usize % NUM_ENTRIES_4KIB;
+    let lvl2_index = (vaddr / lvl2_align_size) as usize % ENTRIES_PER_LEVEL;
+    let lvl3_index = (vaddr / lvl3_align_size) as usize % ENTRIES_PER_LEVEL;
 
     // LVL2 entry is missing, add one
     if LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] == 0 {
@@ -302,7 +309,7 @@ pub unsafe fn create_lvl3_page(vaddr: u64, paddr: u64, permission: MemoryPermiss
         }
     };
 
-    LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[lvl3_index] = (flags + STAGE3_TABLE_DESCRIPTOR::ADDRESS.val(paddr >> 12)).value;
+    LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[lvl3_index] = (flags + STAGE3_TABLE_DESCRIPTOR::ADDRESS.val(paddr >> PAGE_GRANULE)).value;
     asm!("dmb sy" ::: "memory");
 }
 
@@ -395,7 +402,7 @@ unsafe fn init_executable_mapping() {
     );
 }
 
-pub unsafe fn init_page_mapping() {
+unsafe fn init_page_mapping() {
     let common_flags = STAGE1_NEXTLEVEL_DESCRIPTOR::VALID::True
         + STAGE1_NEXTLEVEL_DESCRIPTOR::TYPE::Table
         + STAGE1_NEXTLEVEL_DESCRIPTOR::NS::True;
@@ -407,8 +414,8 @@ pub unsafe fn init_page_mapping() {
         .enumerate()
         .take(NUM_LVL1_ENTRIES)
     {
-        let address = &LVL1_TABLE.lvl2[lvl1_index].entries[0] as *const _ as u64 >> 12;
-        *lvl1_entry = (common_flags + STAGE1_NEXTLEVEL_DESCRIPTOR::ADDRESS.val(address)).value;
+        let address = &LVL1_TABLE.lvl2[lvl1_index].entries[0] as *const _ as u64 >> PAGE_GRANULE;
+        *lvl1_entry = (common_flags + STAGE1_NEXTLEVEL_DESCRIPTOR::ADDRESS_4K.val(address)).value;
     }
 
     init_executable_mapping();
@@ -454,9 +461,6 @@ pub unsafe fn setup() {
 
     // setup TTBR0/TTBR1
     asm!("msr ttbr0_el1, $0" :: "r"(&LVL1_TABLE.entries[0] as *const _ as u64) :: "volatile");
-
-    // TODO: virt mapping
-    //asm!("msr ttbr1_el1, $0" :: "r"(&LVL1_TABLE.entries[0] as *const _ as u64) :: "volatile");
 
     asm!("tlbi vmalle1" :::: "volatile");
     asm!("ic iallu" :::: "volatile");
