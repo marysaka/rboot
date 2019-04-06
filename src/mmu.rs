@@ -325,7 +325,13 @@ pub fn map_normal_page(vaddr: u64, paddr: u64, size: u64, permission: MemoryPerm
     map_page(vaddr, paddr, size, permission, mem_attr::NORMAL)
 }
 
-pub fn map_page(vaddr: u64, paddr: u64, size: u64, permission: MemoryPermission, memory_attribute: u64) {
+pub fn map_page(
+    vaddr: u64,
+    paddr: u64,
+    size: u64,
+    permission: MemoryPermission,
+    memory_attribute: u64,
+) {
     if size == 0 {
         return;
     }
@@ -349,12 +355,9 @@ pub fn map_page(vaddr: u64, paddr: u64, size: u64, permission: MemoryPermission,
     unsafe {
         asm!("dsb sy" :::: "volatile");
         asm!("isb" :::: "volatile");
-
-        asm!("tlbi vmalle1" :::: "volatile");
-
-        asm!("dsb sy" :::: "volatile");
-        asm!("isb" :::: "volatile");
     };
+
+    invalidate_tlb_all()
 }
 
 pub fn unmap_page(vaddr: u64, size: u64) {
@@ -379,12 +382,9 @@ pub fn unmap_page(vaddr: u64, size: u64) {
     unsafe {
         asm!("dsb sy" :::: "volatile");
         asm!("isb" :::: "volatile");
-
-        asm!("tlbi vmalle1" :::: "volatile");
-
-        asm!("dsb sy" :::: "volatile");
-        asm!("isb" :::: "volatile");
     };
+
+    invalidate_tlb_all()
 }
 
 fn map_lvl2_block(vaddr: u64, paddr: u64, size: u64, memory_attribute: u64) {
@@ -410,7 +410,7 @@ unsafe fn init_executable_mapping() {
         text_start,
         text_start,
         text_end - text_start,
-        MemoryPermission::RX
+        MemoryPermission::RX,
     );
 
     let ro_start = &__start_ro__ as *const _ as u64;
@@ -423,7 +423,7 @@ unsafe fn init_executable_mapping() {
         data_start,
         data_start,
         data_end - data_start,
-        MemoryPermission::RW
+        MemoryPermission::RW,
     );
 
     let bss_start = &__start_bss__ as *const _ as u64;
@@ -432,7 +432,7 @@ unsafe fn init_executable_mapping() {
         bss_start,
         bss_start,
         bss_end - bss_start,
-        MemoryPermission::RW
+        MemoryPermission::RW,
     );
 
     // Setup our stack
@@ -442,7 +442,7 @@ unsafe fn init_executable_mapping() {
         stack_start,
         stack_start,
         stack_end - stack_start,
-        MemoryPermission::RW
+        MemoryPermission::RW,
     );
 
     // Also setup the exception vector
@@ -452,7 +452,7 @@ unsafe fn init_executable_mapping() {
         vectors_start,
         vectors_start,
         vectors_end - vectors_start,
-        MemoryPermission::RX
+        MemoryPermission::RX,
     );
 }
 
@@ -503,52 +503,171 @@ fn init_page_mapping() {
     );
 }
 
+fn get_sctlr() -> u64 {
+    let mut ctrl: u64;
+
+    unsafe {
+        match utils::get_current_el() {
+            1 => asm!("mrs $0, sctlr_el1" : "=r"(ctrl) ::: "volatile"),
+            2 => asm!("mrs $0, sctlr_el2" : "=r"(ctrl) ::: "volatile"),
+            3 => asm!("mrs $0, sctlr_el3" : "=r"(ctrl) ::: "volatile"),
+            _ => unimplemented!(),
+        }
+    }
+
+    ctrl
+}
+
+fn set_sctlr(new_sctlr: u64) {
+    unsafe {
+        match utils::get_current_el() {
+            1 => asm!("msr sctlr_el1, $0" :: "r"(new_sctlr) :: "volatile"),
+            2 => asm!("msr sctlr_el2, $0" :: "r"(new_sctlr) :: "volatile"),
+            3 => asm!("msr sctlr_el3, $0" :: "r"(new_sctlr) :: "volatile"),
+            _ => unimplemented!(),
+        }
+
+        asm!("isb" :::: "volatile");
+    }
+}
+
+pub fn switch_ttbr(address: u64) {
+    let current_el = utils::get_current_el();
+
+    let sctlr = get_sctlr();
+
+    let mut temp_sctlr = sctlr;
+
+    // Disbale MMU and caches.
+    temp_sctlr &= !((1 << 0) | (1 << 2) | (1 << 12));
+
+    set_sctlr(temp_sctlr);
+
+    // Invalidate TLB
+    invalidate_tlb_all();
+
+    unsafe {
+        // Set TTRBR
+        match current_el {
+            1 => asm!("msr ttbr0_el1, $0" :: "r"(address) :: "volatile"),
+            2 => asm!("msr ttbr0_el2, $0" :: "r"(address) :: "volatile"),
+            3 => asm!("msr ttbr0_el3, $0" :: "r"(address) :: "volatile"),
+            _ => unimplemented!(),
+        }
+
+        asm!("isb" :::: "volatile");
+    }
+
+    // Restore previous sctlr.
+    set_sctlr(sctlr);
+}
+
+pub fn invalidate_tlb_all() {
+    unsafe {
+        match utils::get_current_el() {
+            1 => asm!("tlbi vmalle1" :::: "volatile"),
+            2 => asm!("tlbi alle2" :::: "volatile"),
+            3 => asm!("tlbi alle3" :::: "volatile"),
+            _ => unimplemented!(),
+        }
+
+        asm!("dsb sy" :::: "volatile");
+        asm!("isb" :::: "volatile");
+    }
+}
+
+pub fn invalidate_icache_all() {
+    unsafe {
+        asm!("ic iallu" :::: "volatile");
+        asm!("dsb sy" :::: "volatile");
+        asm!("isb" :::: "volatile");
+    }
+}
+
+pub fn enable_icache() {
+    invalidate_icache_all();
+    set_sctlr(get_sctlr() | (1 << 12));
+}
+
+pub fn disable_icache() {
+    set_sctlr(get_sctlr() | !(1 << 12));
+}
+
+pub fn is_icache_enabled() -> bool {
+    (get_sctlr() & (1 << 12)) != 0
+}
+
+/// Enable receiving instruction cache/tbl maintenance operations.
+fn enable_maintenance_operations() {
+    if utils::get_current_el() == 3 {
+        unsafe {
+            let mut cpu_ectrl: u64;
+            asm!("mrs $0, S3_1_C15_C2_1" : "=r"(cpu_ectrl) ::: "volatile");
+            cpu_ectrl |= 1 << 6;
+            asm!("msr S3_1_C15_C2_1, $0" :: "r"(cpu_ectrl) :: "volatile");
+        }
+    }
+}
+
+unsafe fn set_mair_ttbr_tcr(mair: u64, ttbr: u64, tcr: u64) {
+    asm!("dsb sy" :::: "volatile");
+
+    match utils::get_current_el() {
+        1 => {
+            asm!("msr mair_el1, $0" :: "r"(mair) :: "volatile");
+            asm!("msr ttbr0_el1, $0" :: "r"(ttbr) :: "volatile");
+            asm!("msr tcr_el1, $0":: "r"(tcr) :: "volatile");
+        }
+        2 => {
+            asm!("msr mair_el2, $0" :: "r"(mair) :: "volatile");
+            asm!("msr ttbr0_el2, $0" :: "r"(ttbr) :: "volatile");
+            asm!("msr tcr_el2, $0":: "r"(tcr) :: "volatile");
+        }
+        3 => {
+            asm!("msr mair_el3, $0" :: "r"(mair) :: "volatile");
+            asm!("msr ttbr0_el3, $0" :: "r"(ttbr) :: "volatile");
+            asm!("msr tcr_el3, $0":: "r"(tcr) :: "volatile");
+        }
+        _ => unimplemented!(),
+    }
+
+    asm!("isb");
+}
+
 pub unsafe fn setup() {
     init_page_mapping();
 
-    // start MMU state setup
+    // Make sure TLB/cache operations are activated.
+    enable_maintenance_operations();
 
-    asm!("dsb sy" :::: "volatile");
+    // Setup memory attributes, lvl1 table and tcr.
 
-    // setup MAIR
     let mair: u64 = (0x00 << (mem_attr::MMIO * 8))
         | (0xFF << (mem_attr::NORMAL * 8))
         | (0x44 << (mem_attr::NORMAL_UNCACHED * 8));
-    asm!("msr mair_el1, $0" :: "r"(mair) :: "volatile");
 
-    // setup TTBR0/TTBR1
-    asm!("msr ttbr0_el1, $0" :: "r"(&LVL1_TABLE.entries[0] as *const _ as u64) :: "volatile");
-
-    asm!("tlbi vmalle1" :::: "volatile");
-    asm!("ic iallu" :::: "volatile");
-    asm!("dsb sy" :::: "volatile");
-    asm!("isb" :::: "volatile");
+    let ttbr = &LVL1_TABLE.entries[0] as *const _ as u64;
 
     // TODO: register field for this
     // TCR_PS_40BIT | TCR_TG0_4K | MMU_MEMORY_TCR_OUTER_RGN0(MMU_MEMORY_RGN_WRITE_BACK_ALLOCATE) | MMU_MEMORY_TCR_INNER_RGN0(MMU_MEMORY_RGN_WRITE_BACK_ALLOCATE) | MMU_MEMORY_TCR_T0SZ(MONBITS))
     let tcr: u64 = (2 << 16) | (0 << 14) | (1 << 10) | (1 << 8) | ((64 - TARGET_BITS as u64) << 0);
-    asm!("msr tcr_el1, $0":: "r"(tcr) :: "volatile");
-    asm!("isb");
+    set_mair_ttbr_tcr(mair, ttbr, tcr);
 
-    let mut cpu_ectrl: u64;
-
-    asm!("mrs $0, S3_1_C15_C2_1" : "=r"(cpu_ectrl) ::: "volatile");
-    cpu_ectrl |= 1 << 6;
-    asm!("msr S3_1_C15_C2_1, $0" :: "r"(cpu_ectrl) :: "volatile");
+    // Invalidate icache as we are going to activate it.
+    invalidate_icache_all();
 
     // finally enable MMU and cache
-    let mut ctrl: u64;
-    asm!("mrs $0, sctlr_el1" : "=r"(ctrl) ::: "volatile");
+    let mut ctrl = get_sctlr();
 
     ctrl |= 0xC00800; // mandatory reserved bits
     ctrl |= (1 << 12) |    // I, Instruction cache enable. This is an enable bit for instruction caches at EL0 and EL1
-            (1 << 4)  |    // SA0, tack Alignment Check Enable for EL0
+            (1 << 4)  |    // SA0, Stack Alignment Check Enable for EL0
             (1 << 3)  |    // SA, Stack Alignment Check Enable
             (1 << 2)  |    // C, Data cache enable. This is an enable bit for data caches at EL0 and EL1
             (1 << 1)  |    // A, Alignment check enable bit
             (1 << 0); // set M, enable MMU
 
-    asm!("msr sctlr_el1, $0" :: "r"(ctrl) :: "volatile");
+    set_sctlr(ctrl);
 
     // and hope that it's okayish
     asm!("dsb sy");

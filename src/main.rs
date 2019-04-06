@@ -73,9 +73,8 @@ fn main() {
 
     info!("Hello World");
 
-    let current_el: u32;
-    unsafe { asm!("mrs $0, CurrentEL" : "=r"(current_el) ::: "volatile") }
-    trace!("Executing in EL: {}", current_el >> 2);
+    let current_el = utils::get_current_el();
+    trace!("Executing in EL: {}", current_el);
 
     let core_id: u64;
     unsafe { asm!("mrs $0, mpidr_el1" : "=r"(core_id) ::: "volatile") }
@@ -86,7 +85,9 @@ fn main() {
     let ptr_value = ptr as u64;
 
     mmu::map_normal_page(ptr_value, ptr_value, 4096, mmu::MemoryPermission::RW);
-    unsafe { *ptr = 0xCAFEBABE; }
+    unsafe {
+        *ptr = 0xCAFEBABE;
+    }
     trace!("Change permissions of page to R--");
     mmu::map_normal_page(ptr_value, ptr_value, 4096, mmu::MemoryPermission::R);
 
