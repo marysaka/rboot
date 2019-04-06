@@ -60,32 +60,8 @@ pub unsafe extern "C" fn reboot_to_rcm() {
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
     asm!("mov sp, $0
-     b _switch_to_el1"
+     b _start_with_stack"
     :: "r"(&_stack_top as *const u8 as usize) :: "volatile");
-    core::intrinsics::unreachable()
-}
-
-// TODO: don't switch to EL1
-// BODY: We need MMU support for EL2
-#[link_section = ".text.boot"]
-#[no_mangle]
-pub unsafe extern "C" fn _switch_to_el1() -> ! {
-    asm!(
-        "msr sctlr_el1, xzr
-         mrs x0, hcr_el2
-         orr x0, x0, #(1 << 31)
-         msr hcr_el2, x0
-         mov x0, #0b00101
-         msr spsr_el2, x0
-         msr elr_el2, $0
-         msr sp_el1, $1
-         eret"
-        ::
-        "r"(_start_with_stack as *const () as u64),
-        "r"(&_stack_top as *const u8 as usize)
-        ::
-        "volatile"
-    );
     core::intrinsics::unreachable()
 }
 
@@ -96,7 +72,7 @@ pub unsafe extern "C" fn _start_with_stack() -> ! {
     let count = &__end_bss__ as *const u8 as usize - &__start_bss__ as *const u8 as usize;
     ptr::write_bytes(&mut __start_bss__ as *mut u8, 0, count);
 
-    exception_vectors::set_vbar_el1();
+    exception_vectors::setup();
     mmu::setup();
 
     // Call user entry point

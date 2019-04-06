@@ -2,6 +2,7 @@ use crate::tegra210::uart::UART;
 use core::fmt::Write;
 
 use crate::rt;
+use crate::utils;
 
 global_asm!(
     "
@@ -17,8 +18,8 @@ global_asm!(
 
     .section .vectors, \"ax\"
     .align  11
-    .global el1_vector_table;
-    el1_vector_table:
+    .global vector_table;
+    vector_table:
         /* Current EL with SP0 */
         vector_entry _start_with_stack
         vector_not_handled
@@ -48,13 +49,24 @@ global_asm!(
     "
 );
 
-pub unsafe fn set_vbar_el1() {
+pub fn set_vbar(vbar: u64) {
+    unsafe {
+        match utils::get_current_el() {
+            1 => asm!("msr vbar_el1, $0" :: "r"(vbar) :: "volatile"),
+            2 => asm!("msr vbar_el2, $0" :: "r"(vbar) :: "volatile"),
+            3 => asm!("msr vbar_el3, $0" :: "r"(vbar) :: "volatile"),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+pub fn setup() {
     extern "C" {
-        static el1_vector_table: u64;
+        static vector_table: u64;
     }
 
-    let exception_vectors_start: u64 = &el1_vector_table as *const _ as u64;
-    asm!("msr vbar_el1, $0" :: "r"(exception_vectors_start) :: "volatile");
+    let vbar = unsafe { &vector_table as *const _ as u64 };
+    set_vbar(vbar);
 }
 
 global_asm!(
@@ -67,7 +79,7 @@ global_asm!(
         ldp     \\xreg1, \\xreg2, [sp], #16
     .endm
 
-    .macro __save_registers
+    .macro __save_generic_registers
         push    x29, x30
         push    x27, x28
         push    x25, x26
@@ -83,26 +95,9 @@ global_asm!(
         push    x5,  x6
         push    x3,  x4
         push    x1,  x2
-
-        mrs     x20, esr_el1
-        push    x20, x0
-
-        mrs     x0, elr_el1
-        mrs     x1, spsr_el1
-        push    x0, x1
-
-        mrs     x0, far_el1
-        push    x0, x0
     .endm
-    .macro __restore_registers
-        pop    x0, x0
 
-        pop    x0, x1
-        msr    elr_el1, x0
-        msr    spsr_el1, x1
-
-        pop    x20, x0
-
+    .macro __restore_generic_registers
         pop    x1,  x2
         pop    x3,  x4
         pop    x5,  x6
@@ -119,6 +114,73 @@ global_asm!(
         pop    x27, x28
         pop    x29, x30
     .endm
+
+    .macro __save_el_registers
+        mrs    x11, CurrentEL
+        cmp    x11, 0xc
+        b.eq   3f
+        cmp    x11, 0x8
+        b.eq   2f
+        cmp    x11, 0x4
+        b.eq   1f
+    3:
+        mrs     x20, esr_el3
+        push    x20, x0
+        mrs     x0, elr_el3
+        mrs     x1, spsr_el3
+        push    x0, x1
+        mrs     x0, far_el3
+        push    x0, x0
+        b 0f
+    2:
+        mrs     x20, esr_el2
+        push    x20, x0
+        mrs     x0, elr_el2
+        mrs     x1, spsr_el2
+        push    x0, x1
+        mrs     x0, far_el2
+        push    x0, x0
+        b 0f
+    1:
+        mrs     x20, esr_el1
+        push    x20, x0
+        mrs     x0, elr_el1
+        mrs     x1, spsr_el1
+        push    x0, x1
+        mrs     x0, far_el1
+        push    x0, x0
+        b 0f
+    0:
+    .endm
+
+    .macro __restore_el_registers
+        pop    x0, x0
+
+        pop    x0, x1
+
+        mrs    x11, CurrentEL
+        cmp    x11, 0xc
+        b.eq   3f
+        cmp    x11, 0x8
+        b.eq   2f
+        cmp    x11, 0x4
+        b.eq   1f
+
+    3:
+        msr    elr_el2, x0
+        msr    spsr_el2, x1
+        b 0f
+    2:
+        msr    elr_el2, x0
+        msr    spsr_el2, x1
+        b 0f
+    1:
+        msr    elr_el1, x0
+        msr    spsr_el1, x1
+        b 0f
+    0:
+        pop    x20, x0
+    .endm
     "
 );
 
@@ -134,24 +196,28 @@ extern "C" {
 unsafe fn _unhandled_vector() {
     asm!(
         "
-        mov sp, $0
-        __save_registers
-          mov x0, sp
-          bl unhandled_vector
-          __restore_registers
-          eret"
-    :: "r"(&_stack_top as *const u8 as usize) :: "volatile");
+        __save_generic_registers
+        __save_el_registers
+        mov x0, sp
+        bl unhandled_vector
+        __restore_el_registers
+        __restore_generic_registers
+        eret"
+    );
 }
 
 #[naked]
 #[no_mangle]
 unsafe fn _current_elx_sync() {
     asm!(
-        "__save_registers
-          mov x0, sp
-          bl current_elx_sync
-          __restore_registers
-          eret"
+        "
+        __save_generic_registers
+        __save_el_registers
+        mov x0, sp
+        bl current_elx_sync
+        __restore_el_registers
+        __restore_generic_registers
+        eret"
     );
 }
 
