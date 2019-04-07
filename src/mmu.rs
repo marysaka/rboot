@@ -55,7 +55,7 @@ struct TableLVL3 {
 #[derive(Copy, Clone)]
 struct TableLVL2 {
     entries: [u64; ENTRIES_PER_LEVEL],
-    lvl3: [TableLVL3; NUM_LVL1_ENTRIES],
+    lvl3: [TableLVL3; ENTRIES_PER_LEVEL],
 }
 
 #[repr(C)]
@@ -72,7 +72,7 @@ static mut LVL1_TABLE: TableLVL1 = TableLVL1 {
         entries: [0x0; ENTRIES_PER_LEVEL],
         lvl3: [TableLVL3 {
             entries: [0x0; ENTRIES_PER_LEVEL],
-        }; NUM_LVL1_ENTRIES],
+        }; ENTRIES_PER_LEVEL],
     }; NUM_LVL1_ENTRIES],
 };
 
