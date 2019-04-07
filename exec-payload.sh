@@ -103,7 +103,7 @@ echo "${BL_DIR}/${target_board}/BCT/${EMMC_BCT}"
 	--bldtb "${DTB_DIR}/${DTB_FILE}" \
 	--kerneldtb "${DTB_DIR}/${DTB_FILE}" \
 	--applet-cpu "${LDK_DIR}/${TBCFILE}" \
-	--tos "${LDK_DIR}/${TOSFILE}" \
+	--tos "${TOSFILE}" \
 	--bl "${fn_img}" \
 	--bl-load `cat "${fn_addr}"` \
 	--wb "${LDK_DIR}/${WB0BOOT}" \

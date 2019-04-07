@@ -42,7 +42,8 @@ extern "C" {
 #[no_mangle]
 pub unsafe extern "C" fn reboot_to_rcm() {
     asm!(
-        "mov x1, xzr
+        "
+    mov x1, xzr
     mov w2, #0x2
     movz x1, 0xE450
     movk x1, #0x7000, lsl 16
@@ -55,23 +56,162 @@ pub unsafe extern "C" fn reboot_to_rcm() {
     );
 }
 
-#[link_section = ".text.boot"]
-//#[naked]
+#[link_section = ".text.crt0"]
+#[naked]
 #[no_mangle]
-pub unsafe extern "C" fn _start() -> ! {
-    asm!("mov sp, $0
-     b _start_with_stack"
-    :: "r"(&_stack_top as *const u8 as usize) :: "volatile");
-    core::intrinsics::unreachable()
+pub unsafe extern "C" fn _start() {
+    asm!(
+        "
+     b trampoline
+     .word _DYNAMIC - _start
+    "
+    );
+}
+
+#[naked]
+#[no_mangle]
+pub unsafe extern "C" fn trampoline() {
+    asm!(
+        "
+     adrp x0, _stack_top
+     add x0, x0, #:lo12:_stack_top
+     mov sp, x0
+     adrp x0, _start
+     bl relocate_self
+
+     adrp x0, __start_bss__
+     add x0, x0, #:lo12:__start_bss__
+     adrp x1, __end_bss__
+     add x1, x1, #:lo12:__end_bss__
+     bl clean_bss
+     bl _start_with_stack"
+    )
+}
+
+const DT_NULL: isize = 0;
+const DT_RELA: isize = 7;
+const DT_RELASZ: isize = 8;
+const DT_RELAENT: isize = 9;
+const DT_RELACOUNT: isize = 0x6ffffff9;
+const DT_REL: isize = 17;
+const DT_RELSZ: isize = 18;
+const DT_RELENT: isize = 19;
+const DT_RELCOUNT: isize = 0x6ffffffa;
+
+const R_AARCH64_RELATIVE: usize = 0x403;
+
+#[repr(C)]
+#[derive(Debug)]
+struct ElfDyn {
+    tag: isize,
+    val: usize,
+}
+
+#[repr(C)]
+struct ElfRel {
+    offset: usize,
+    info: usize,
+}
+
+#[repr(C)]
+struct ElfRela {
+    offset: usize,
+    info: usize,
+    addend: isize,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn relocate_self(aslr_base: *mut u8) -> u32 {
+    let mut dynamic =
+        aslr_base.offset(*(aslr_base.offset(4) as *const u32) as isize) as *mut ElfDyn;
+
+    let mut rela_offset = None;
+    let mut rela_entry_size = 0;
+    let mut rela_count = 0;
+
+    let mut rel_offset = None;
+    let mut rel_entry_size = 0;
+    let mut rel_count = 0;
+
+    while (*dynamic).tag != DT_NULL {
+        match (*dynamic).tag {
+            DT_RELA => {
+                rela_offset = Some((*dynamic).val);
+            }
+            DT_RELAENT => {
+                rela_entry_size = (*dynamic).val;
+            }
+            DT_REL => {
+                rel_offset = Some((*dynamic).val);
+            }
+            DT_RELENT => {
+                rel_entry_size = (*dynamic).val;
+            }
+            DT_RELACOUNT => {
+                rela_count = (*dynamic).val;
+            }
+            DT_RELCOUNT => {
+                rel_count = (*dynamic).val;
+            }
+            _ => {}
+        }
+        dynamic = dynamic.offset(1);
+    }
+
+    if let Some(rela_offset) = rela_offset {
+        if rela_entry_size != core::mem::size_of::<ElfRela>() {
+            return 2;
+        }
+        let rela_base = (aslr_base.add(rela_offset)) as *mut ElfRela;
+
+        for i in 0..rela_count {
+            let rela = rela_base.add(i);
+
+            let reloc_type = (*rela).info & 0xffffffff;
+
+            if reloc_type == R_AARCH64_RELATIVE {
+                *(aslr_base.add((*rela).offset) as *mut *mut ()) =
+                    aslr_base.offset((*rela).addend) as _;
+            } else {
+                return 4;
+            }
+        }
+    }
+
+    if let Some(rel_offset) = rel_offset {
+        if rel_entry_size != core::mem::size_of::<ElfRel>() {
+            return 3;
+        }
+
+        let rel_base = (aslr_base.add(rel_offset)) as *mut ElfRel;
+
+        for i in 0..rel_count {
+            let rel = rel_base.add(i);
+
+            let reloc_type = (*rel).info & 0xffffffff;
+
+            if let R_AARCH64_RELATIVE = reloc_type {
+                let ptr = aslr_base.add((*rel).offset) as *mut usize;
+                *ptr += aslr_base as usize;
+            } else {
+                return 4;
+            }
+        }
+    }
+    0
+}
+
+#[no_mangle]
+unsafe extern "C" fn clean_bss(start_bss: *mut u8, end_bss: *mut u8) {
+    ptr::write_bytes(
+        start_bss,
+        0,
+        end_bss as *const _ as usize - start_bss as *const _ as usize,
+    );
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn _start_with_stack() -> ! {
-    // Clean .bss
-    // FIXME: Will not work when we will want relocation
-    let count = &__end_bss__ as *const u8 as usize - &__start_bss__ as *const u8 as usize;
-    ptr::write_bytes(&mut __start_bss__ as *mut u8, 0, count);
-
     exception_vectors::setup();
     mmu::setup();
 
