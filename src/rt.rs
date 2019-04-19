@@ -79,10 +79,10 @@ pub unsafe extern "C" fn trampoline() {
      adrp x0, _start
      bl relocate_self
 
-     adrp x0, __start_bss__
-     add x0, x0, #:lo12:__start_bss__
-     adrp x1, __end_bss__
-     add x1, x1, #:lo12:__end_bss__
+     adrp x0, __bss_start__
+     add x0, x0, #:lo12:__bss_start__
+     adrp x1, __bss_end__
+     add x1, x1, #:lo12:__bss_end__
      bl clean_bss
      bl _start_with_stack"
     )

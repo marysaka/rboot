@@ -4,16 +4,16 @@ use crate::utils;
 use register::register_bitfields;
 
 extern "C" {
-    static mut __start_text__: u8;
-    static mut __end_text__: u8;
-    static mut __start_vectors__: u8;
-    static mut __end_vectors__: u8;
-    static mut __start_ro__: u8;
-    static mut __end_ro__: u8;
-    static mut __start_data__: u8;
-    static mut __end_data__: u8;
-    static mut __start_bss__: u8;
-    static mut __end_bss__: u8;
+    static mut __text_start__: u8;
+    static mut __text_end__: u8;
+    static mut __vectors_start__: u8;
+    static mut __vectors_end__: u8;
+    static mut __rodata_start__: u8;
+    static mut __rodata_end__: u8;
+    static mut __data_start__: u8;
+    static mut __data_end__: u8;
+    static mut __bss_start__: u8;
+    static mut __bss_end__: u8;
     static _stack_bottom: u8;
     static _stack_top: u8;
 }
@@ -404,8 +404,8 @@ fn map_lvl2_block(vaddr: u64, paddr: u64, size: u64, memory_attribute: u64) {
 }
 
 unsafe fn init_executable_mapping() {
-    let text_start = &__start_text__ as *const _ as u64;
-    let text_end = &__end_text__ as *const _ as u64;
+    let text_start = &__text_start__ as *const _ as u64;
+    let text_end = &__text_end__ as *const _ as u64;
     map_normal_page(
         text_start,
         text_start,
@@ -413,12 +413,12 @@ unsafe fn init_executable_mapping() {
         MemoryPermission::RX,
     );
 
-    let ro_start = &__start_ro__ as *const _ as u64;
-    let ro_end = &__end_ro__ as *const _ as u64;
+    let ro_start = &__rodata_start__ as *const _ as u64;
+    let ro_end = &__rodata_end__ as *const _ as u64;
     map_normal_page(ro_start, ro_start, ro_end - ro_start, MemoryPermission::R);
 
-    let data_start = &__start_data__ as *const _ as u64;
-    let data_end = &__end_data__ as *const _ as u64;
+    let data_start = &__data_start__ as *const _ as u64;
+    let data_end = &__data_end__ as *const _ as u64;
     map_normal_page(
         data_start,
         data_start,
@@ -426,8 +426,8 @@ unsafe fn init_executable_mapping() {
         MemoryPermission::RW,
     );
 
-    let bss_start = &__start_bss__ as *const _ as u64;
-    let bss_end = &__end_bss__ as *const _ as u64;
+    let bss_start = &__bss_start__ as *const _ as u64;
+    let bss_end = &__bss_end__ as *const _ as u64;
     map_normal_page(
         bss_start,
         bss_start,
@@ -446,8 +446,8 @@ unsafe fn init_executable_mapping() {
     );
 
     // Also setup the exception vector
-    let vectors_start = &__start_vectors__ as *const _ as u64;
-    let vectors_end = &__end_vectors__ as *const _ as u64;
+    let vectors_start = &__vectors_start__ as *const _ as u64;
+    let vectors_end = &__vectors_end__ as *const _ as u64;
     map_normal_page(
         vectors_start,
         vectors_start,

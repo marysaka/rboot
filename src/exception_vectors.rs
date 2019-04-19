@@ -184,13 +184,6 @@ global_asm!(
     "
 );
 
-extern "C" {
-    static mut __start_bss__: u8;
-    static mut __end_bss__: u8;
-    static _stack_bottom: u8;
-    static _stack_top: u8;
-}
-
 #[naked]
 #[no_mangle]
 unsafe fn _unhandled_vector() {
