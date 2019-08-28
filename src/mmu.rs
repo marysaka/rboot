@@ -483,6 +483,8 @@ fn init_page_mapping() {
     const MMIO_RANGE_1_ADDR: u64 = 0x60000000;
     const MMIO_RANGE_2_ADDR: u64 = 0x70000000;
 
+    const MMIO_RANGE_3_ADDR: u64 = 0x54400000;
+
     map_lvl2_block(
         MMIO_RANGE_0_ADDR,
         MMIO_RANGE_0_ADDR,
@@ -498,6 +500,12 @@ fn init_page_mapping() {
     map_lvl2_block(
         MMIO_RANGE_2_ADDR,
         MMIO_RANGE_2_ADDR,
+        MMIO_RANGE_SIZE,
+        mem_attr::MMIO,
+    );
+    map_lvl2_block(
+        MMIO_RANGE_3_ADDR,
+        MMIO_RANGE_3_ADDR,
         MMIO_RANGE_SIZE,
         mem_attr::MMIO,
     );
