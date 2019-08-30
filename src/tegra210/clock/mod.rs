@@ -1,5 +1,7 @@
 use register::mmio::ReadWrite;
 
+use super::timer;
+
 #[derive(Debug, Clone)]
 pub struct Clock {
     reset: u32,
@@ -24,6 +26,8 @@ const CLK_RST_CONTROLLER_CLK_OUT_ENB_H: u32 = 0x14;
 const CLK_RST_CONTROLLER_CLK_OUT_ENB_U: u32 = 0x18;
 const CLK_RST_CONTROLLER_CLK_OUT_ENB_X: u32 = 0x280;
 const CLK_RST_CONTROLLER_CLK_OUT_ENB_Y: u32 = 0x298;
+const CLK_RST_CONTROLLER_CLK_OUT_ENB_V: u32 = 0x360;
+const CLK_RST_CONTROLLER_CLK_OUT_ENB_W: u32 = 0x364;
 
 const CLK_NO_SOURCE: u32 = 0;
 const CLK_RST_CONTROLLER_CLK_SOURCE_UARTA: u32 = 0x178;
@@ -33,6 +37,8 @@ const CLK_RST_CONTROLLER_CLK_SOURCE_UARTC: u32 = 0x1A0;
 const CLK_RST_CONTROLLER_CLK_SOURCE_UARTD: u32 = 0x1C0;
 const CLK_RST_CONTROLLER_CLK_SOURCE_TSEC: u32 = 0x1F4;
 const CLK_RST_CONTROLLER_CLK_SOURCE_SOR1: u32 = 0x410;
+const CLK_RST_CONTROLLER_CLK_SOURCE_SE: u32 = 0x42C;
+const CLK_RST_CONTROLLER_CLK_SOURCE_TSECB: u32 = 0x6d8;
 
 const CLOCK_BASE: u32 = 0x6000_6000;
 
@@ -72,6 +78,15 @@ impl Clock {
         clock_divisor: 3,
     };
 
+    pub const SE: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_V,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_V,
+        source: CLK_RST_CONTROLLER_CLK_SOURCE_SE,
+        index: 0x1F,
+        clock_source: 0,
+        clock_divisor: 0,
+    };
+
     pub const TSEC: Clock = Clock {
         reset: CLK_RST_CONTROLLER_RST_DEVICES_U,
         enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_U,
@@ -81,11 +96,29 @@ impl Clock {
         clock_divisor: 2,
     };
 
+    pub const TSECB: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_Y,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_Y,
+        source: CLK_RST_CONTROLLER_CLK_SOURCE_TSECB,
+        index: 0xE,
+        clock_source: 0,
+        clock_divisor: 2,
+    };
+
     pub const SOR_SAFE: Clock = Clock {
         reset: CLK_RST_CONTROLLER_RST_DEVICES_Y,
         enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_Y,
         source: CLK_NO_SOURCE,
         index: 0x1E,
+        clock_source: 0,
+        clock_divisor: 0,
+    };
+    
+    pub const DPAUX: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_X,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_X,
+        source: CLK_NO_SOURCE,
+        index: 0x15,
         clock_source: 0,
         clock_divisor: 0,
     };
@@ -106,6 +139,51 @@ impl Clock {
         index: 0x17,
         clock_source: 0,
         clock_divisor: 2,
+    };
+
+    pub const DPAUX1: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_Y,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_Y,
+        source: CLK_NO_SOURCE,
+        index: 0xF,
+        clock_source: 0,
+        clock_divisor: 0,
+    };
+
+    pub const MIPI_CAL: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_H,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_H,
+        source: CLK_NO_SOURCE,
+        index: 0x18,
+        clock_source: 0,
+        clock_divisor: 0,
+    };
+
+    pub const CSI: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_H,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_H,
+        source: CLK_NO_SOURCE,
+        index: 0x14,
+        clock_source: 0,
+        clock_divisor: 0,
+    };
+
+    pub const DSI: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_H,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_H,
+        source: CLK_NO_SOURCE,
+        index: 0x10,
+        clock_source: 0,
+        clock_divisor: 0,
+    };
+
+    pub const DSIB: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_U,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_U,
+        source: CLK_NO_SOURCE,
+        index: 0x12,
+        clock_source: 0,
+        clock_divisor: 0,
     };
 
     pub const KFUSE: Clock = Clock {
@@ -161,7 +239,7 @@ impl Clock {
         self.disable();
 
         // Setup clock source if needed
-        if self.source != 0 {
+        if self.source != CLK_NO_SOURCE {
             let source_reg = unsafe { &(*((CLOCK_BASE + self.source) as *const ReadWrite<u32>)) };
             source_reg.set(self.clock_divisor | (self.clock_source << 29));
         }
@@ -169,10 +247,12 @@ impl Clock {
         // Enable clock
         self.set_enable(true);
         self.set_reset(false);
+        //assert!(self.is_enabled());
     }
 
     pub fn disable(&self) {
         self.set_reset(true);
         self.set_enable(false);
+        //assert!(!self.is_enabled());
     }
 }
