@@ -31,6 +31,7 @@ const CLK_RST_CONTROLLER_CLK_SOURCE_UARTB: u32 = 0x17C;
 const CLK_RST_CONTROLLER_CLK_SOURCE_HOST1X: u32 = 0x180;
 const CLK_RST_CONTROLLER_CLK_SOURCE_UARTC: u32 = 0x1A0;
 const CLK_RST_CONTROLLER_CLK_SOURCE_UARTD: u32 = 0x1C0;
+const CLK_RST_CONTROLLER_CLK_SOURCE_UARTE: u32 = 0x710;
 const CLK_RST_CONTROLLER_CLK_SOURCE_TSEC: u32 = 0x1F4;
 const CLK_RST_CONTROLLER_CLK_SOURCE_SOR1: u32 = 0x410;
 
@@ -59,6 +60,22 @@ impl Clock {
         enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_H,
         source: CLK_RST_CONTROLLER_CLK_SOURCE_UARTC,
         index: 0x17,
+        clock_source: 0,
+        clock_divisor: 0,
+    };
+    pub const UART_D: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_U,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_U,
+        source: CLK_RST_CONTROLLER_CLK_SOURCE_UARTD,
+        index: 0x1,
+        clock_source: 0,
+        clock_divisor: 0,
+    };
+    pub const UART_E: Clock = Clock {
+        reset: CLK_RST_CONTROLLER_RST_DEVICES_Y,
+        enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_Y,
+        source: CLK_RST_CONTROLLER_CLK_SOURCE_UARTE,
+        index: 0x14,
         clock_source: 0,
         clock_divisor: 0,
     };

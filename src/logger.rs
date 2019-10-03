@@ -7,6 +7,8 @@ pub enum Type {
     A,
     B,
     C,
+    D,
+    E,
 }
 
 struct UARTLogger {
@@ -20,6 +22,8 @@ impl UARTLogger {
             Type::A => UART::A,
             Type::B => UART::B,
             Type::C => UART::C,
+            Type::D => UART::D,
+            Type::E => UART::E,
         }
     }
 
