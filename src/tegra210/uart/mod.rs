@@ -45,10 +45,14 @@ impl UART {
         register_base: 0x7000_6200 as *const UARTRegister,
         clock: &Clock::UART_C,
     };
-
-    // TODO: setup clocks for them
-    //pub const D: Self = UART { register_base: 0x70006300, clock: Clock::UART_D };
-    //pub const E: Self = UART { register_base: 0x70006400, clock: Clock::UART_E };
+    pub const D: Self = UART {
+        register_base: 0x7000_6300 as *const UARTRegister,
+        clock: &Clock::UART_D,
+    };
+    pub const E: Self = UART {
+        register_base: 0x7000_6400 as *const UARTRegister,
+        clock: &Clock::UART_E
+    };
 
     pub fn init(&self, baud: u32) {
         self.clock.enable();
