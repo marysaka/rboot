@@ -1,6 +1,8 @@
 use register::mmio::ReadWrite;
 
-#[derive(Debug, Clone)]
+use crate::tegra210::timer::usleep;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Clock {
     reset: u32,
     enable: u32,
@@ -123,7 +125,7 @@ impl Clock {
         let reset_reg = unsafe { &(*((CLOCK_BASE + self.reset) as *const ReadWrite<u32>)) };
 
         let current_value = reset_reg.get();
-        let mask = (1 << self.index & 0x1f);
+        let mask = (1 << (self.index & 0x1f));
         let value = if set_reset {
             current_value | mask
         } else {
@@ -167,8 +169,16 @@ impl Clock {
         }
 
         // Enable clock
-        self.set_enable(true);
-        self.set_reset(false);
+        if self == &Self::KFUSE { // KFUSE steps out of line.
+            self.set_enable(true);
+            usleep(100);
+            self.set_reset(false);
+            usleep(200);
+        } else {
+            self.set_enable(true);
+            usleep(2);
+            self.set_reset(false);
+        }
     }
 
     pub fn disable(&self) {
