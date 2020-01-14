@@ -459,7 +459,7 @@ unsafe fn init_executable_mapping() {
 fn init_page_mapping() {
     let common_flags = STAGE1_NEXTLEVEL_DESCRIPTOR::VALID::True
         + STAGE1_NEXTLEVEL_DESCRIPTOR::TYPE::Table
-        + STAGE1_NEXTLEVEL_DESCRIPTOR::NS::True;
+        + STAGE1_NEXTLEVEL_DESCRIPTOR::NS::False;
 
     // Setup LVL1 entries
     unsafe {
@@ -484,6 +484,7 @@ fn init_page_mapping() {
     const MMIO_RANGE_2_ADDR: u64 = 0x70000000;
 
     const MMIO_RANGE_3_ADDR: u64 = 0x54400000;
+    const MMIO_RANGE_4_ADDR: u64 = 0x54100000;
 
     map_lvl2_block(
         MMIO_RANGE_0_ADDR,
@@ -506,6 +507,12 @@ fn init_page_mapping() {
     map_lvl2_block(
         MMIO_RANGE_3_ADDR,
         MMIO_RANGE_3_ADDR,
+        MMIO_RANGE_SIZE,
+        mem_attr::MMIO,
+    );
+    map_lvl2_block(
+        MMIO_RANGE_4_ADDR,
+        MMIO_RANGE_4_ADDR,
         MMIO_RANGE_SIZE,
         mem_attr::MMIO,
     );

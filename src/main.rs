@@ -29,10 +29,13 @@ use crate::tegra210::board;
 use crate::tegra210::clock::Clock;
 use crate::tegra210::*;
 
+use core::ops::Deref;
+
 use log::Level;
 
 const APB: *const apb::AMBAPeripheralBus = 0x7000_0000 as *const apb::AMBAPeripheralBus;
 const TSEC: *const tsec::TSEC = 0x5450_0000 as *const tsec::TSEC;
+const MC: *const mc::MemoryController = 0x7001_9000 as *const mc::MemoryController;
 
 entry!(main);
 
@@ -73,52 +76,85 @@ use register::mmio::*;
 include!(concat!(env!("OUT_DIR"), "/falcon_fw.rs"));
 
 // TODO: this should be in a bitfield.
-const TSEC_IRQMSET_WDTMR: u32 = (1 << 1);
-const TSEC_IRQMSET_HALT: u32 = (1 << 4);
-const TSEC_IRQMSET_EXTERR: u32 = (1 << 5);
-const TSEC_IRQMSET_SWGEN0: u32 = (1 << 6);
-const TSEC_IRQMSET_SWGEN1: u32 = (1 << 7);
+const TSEC_IRQMSET_WDTMR: u32 = 1 << 1;
+const TSEC_IRQMSET_HALT: u32 = 1 << 4;
+const TSEC_IRQMSET_EXTERR: u32 = 1 << 5;
+const TSEC_IRQMSET_SWGEN0: u32 = 1 << 6;
+const TSEC_IRQMSET_SWGEN1: u32 = 1 << 7;
 
 const TSEC_IRQMSET_EXT_ALL: u32 = 0xFF00;
 
-const TSEC_IRQDEST_HALT: u32 = (1 << 4);
-const TSEC_IRQDEST_EXTERR: u32 = (1 << 5);
-const TSEC_IRQDEST_SWGEN0: u32 = (1 << 6);
-const TSEC_IRQDEST_SWGEN1: u32 = (1 << 7);
+const TSEC_IRQDEST_HALT: u32 = 1 << 4;
+const TSEC_IRQDEST_EXTERR: u32 = 1 << 5;
+const TSEC_IRQDEST_SWGEN0: u32 = 1 << 6;
+const TSEC_IRQDEST_SWGEN1: u32 = 1 << 7;
 
 const TSEC_IRQDEST_EXT_ALL: u32 = 0xFF00;
 
-const TSEC_ITFEN_CTXEN: u32 = (1 << 0);
-const TSEC_ITFEN_MTHDEN: u32 = (1 << 1);
+const TSEC_ITFEN_CTXEN: u32 = 1 << 0;
+const TSEC_ITFEN_MTHDEN: u32 = 1 << 1;
 
-fn tsec_dma_wait_idle() -> Result<(), ()> {
+const TSEC_FALCON_DMATRFCMD_IMEM: u32 = 1 << 4;
+const TSEC_FALCON_DMATRFCMD_SIZE_256B: u32 = 6 << 8;
+
+const TSEC_FALCON_CPUCTL_IINVAL: u32 = 1 << 0;
+const TSEC_FALCON_CPUCTL_STARTCPU: u32 = 1 << 1;
+const TSEC_FALCON_CPUCTL_SRESET: u32 = 1 << 2;
+const TSEC_FALCON_CPUCTL_HRESET: u32 = 1 << 3;
+const TSEC_FALCON_CPUCTL_HALTED: u32 = 1 << 4;
+const TSEC_FALCON_CPUCTL_STOPPED: u32 = 1 << 5;
+const TSEC_FALCON_CPUCTL_ALIAS_EN: u32 = 1 << 6;
+
+const TSEC_FW_ALIGN_BITS: usize = 8;
+const TSEC_FW_ALIGN: usize = 1 << TSEC_FW_ALIGN_BITS;
+
+#[derive(Debug)]
+enum FalconError {
+    DmaTimeout,
+    FirmwareMisaligned
+}
+
+fn tsec_dma_wait_idle(tsec: &tsec::TSEC) -> Result<(), FalconError> {
     let timeout = timer::get_ms() + 1000;
-    let tsec_instance: &tsec::TSEC = unsafe { &(*TSEC) };
 
-
-    info!("{:p}", &tsec_instance.FALCON_DMATRFCMD);
-    info!("{:b}", tsec_instance.FALCON_DMATRFCMD.get());
-
-    while (tsec_instance.FALCON_DMATRFCMD.get() & (1 << 1)) == 0 {
+    while (tsec.FALCON_DMATRFCMD.get() & (1 << 1)) == 0 {
         if timer::get_ms() > timeout {
-            info!("{:b}", tsec_instance.FALCON_DMATRFCMD.get());
-            return Err(())
+            return Err(FalconError::DmaTimeout);
         }
     }
 
     Ok(())
 }
 
-#[derive(Debug)]
-enum FalconError {
-    DmaTimeout
+fn tsec_dma_copy_to_internal(tsec: &tsec::TSEC, firmware: &[u8]) -> Result<(), FalconError> {
+    let firmware_addr = firmware.as_ptr() as usize;
+    if (firmware_addr % TSEC_FW_ALIGN) != 0 {
+        return Err(FalconError::FirmwareMisaligned)
+    }
+
+    tsec.FALCON_DMATRFBASE.set((firmware_addr >> TSEC_FW_ALIGN_BITS) as u32);
+
+    for (index, data) in firmware.chunks(TSEC_FW_ALIGN).enumerate() {
+        let base = (index * TSEC_FW_ALIGN) as u32;
+        let offset = base;
+
+        tsec.FALCON_DMATRFMOFFS.set(offset);
+        tsec.FALCON_DMATRFFBOFFS.set(base);
+        tsec.FALCON_DMATRFCMD.set(TSEC_FALCON_DMATRFCMD_IMEM);
+
+        tsec_dma_wait_idle(tsec)?;
+    }
+
+    Ok(())
 }
 
-fn execute_tsec_fw(fw: &[u8]) -> Result<(), FalconError> {
+fn execute_tsec_fw(firmware: &[u8], boot_vector_address: u32, argument0: &mut u32, argument1: &mut u32) -> Result<(), FalconError> {
     let mut res = Ok(());
 
+    Clock::SE.enable();
     Clock::HOST1X.enable();
     Clock::TSEC.enable();
+    Clock::TSECB.enable();
     Clock::SOR_SAFE.enable();
     Clock::SOR0.enable();
     Clock::SOR1.enable();
@@ -145,23 +181,105 @@ fn execute_tsec_fw(fw: &[u8]) -> Result<(), FalconError> {
             | TSEC_IRQDEST_SWGEN1,
     );
 
+    // Enable all interfaces
     tsec_instance.FALCON_ITFEN.set(TSEC_ITFEN_CTXEN | TSEC_ITFEN_MTHDEN);
 
-    let dma_idle_res = tsec_dma_wait_idle();
-    if dma_idle_res.is_ok() {
-        info!("DMA IDLE");
-    } else {
-        res = Err(FalconError::DmaTimeout);
+    res = tsec_dma_wait_idle(tsec_instance);
+    if res.is_ok() {
+        // Load the firmware
+        res = tsec_dma_copy_to_internal(tsec_instance, firmware);
+
+        if res.is_ok() {
+            // Setup the mailboxes
+            tsec_instance.FALCON_MAILBOX0.set(*argument0);
+            tsec_instance.FALCON_MAILBOX0.set(*argument1);
+
+            // Setup the boot vector
+            tsec_instance.FALCON_BOOTVEC.set(boot_vector_address);
+
+            // Start the CPU!
+            tsec_instance.FALCON_CPUCTL.set(TSEC_FALCON_CPUCTL_STARTCPU);
+
+            res = tsec_dma_wait_idle(tsec_instance);
+
+            if res.is_ok() {
+                // Wait for the CPU to be halted
+                while tsec_instance.FALCON_CPUCTL.get() != TSEC_FALCON_CPUCTL_HALTED {}
+
+                *argument0 = tsec_instance.FALCON_MAILBOX0.get();
+                *argument1 = tsec_instance.FALCON_MAILBOX1.get();
+            }
+        }
     }
 
     Clock::KFUSE.disable();
     Clock::SOR1.disable();
     Clock::SOR0.disable();
     Clock::SOR_SAFE.disable();
+    Clock::TSECB.disable();
     Clock::TSEC.disable();
     Clock::HOST1X.disable();
 
     res
+}
+
+unsafe fn pmc_powergate_partition(partition_id: u32, enabled: bool) -> Result<(), ()> {
+    let pmc_powergate_toggle: &ReadWrite<u32> = &*(0x7000E430 as *mut ReadWrite<u32>);
+    let pmc_powergate_status: &ReadOnly<u32> = &*(0x7000E438 as *mut ReadOnly<u32>);
+    let partition_mask = 1 << partition_id;
+    let state_changed = (enabled as u32) << partition_id;
+
+    if (pmc_powergate_status.get() & partition_mask) == state_changed{
+        info!("parition_id: {} already {}", partition_id, enabled);
+        return Ok(());
+    }
+
+    let mut i = 5001;
+    while (pmc_powergate_toggle.get() & 0x100) != 0
+    {
+        timer::usleep(1);
+        i -= 1;
+        if i < 1 {
+            return Err(());
+        }
+    }
+
+    pmc_powergate_toggle.set(partition_id | 0x100);
+
+    i = 5001;
+    while i > 0
+    {
+        if (pmc_powergate_status.get() & partition_mask) == state_changed {
+            let pmc_remove_clamping_cmd: &ReadWrite<u32> = &*(0x7000E434 as *mut ReadWrite<u32>);
+
+            pmc_remove_clamping_cmd.set(partition_mask);
+            while (pmc_remove_clamping_cmd.get() & partition_mask) != 0 {}
+            return Ok(());
+        }
+
+        timer::usleep(1);
+        i -= 1;
+    }
+
+    Err(())
+}
+
+fn bring_up_sors() {
+    unsafe { pmc_powergate_partition(17, false).expect("Cannot power ungate SOR"); }
+
+    Clock::SOR_SAFE.enable();
+    Clock::SOR0.enable();
+    Clock::SOR1.enable();
+    Clock::DPAUX.enable();
+    Clock::DPAUX1.enable();
+    Clock::MIPI_CAL.enable();
+    Clock::CSI.enable();
+    Clock::DSI.enable();
+    Clock::DSIB.enable();
+
+    unsafe {
+        pmc_powergate_partition(17, true).expect("Cannot power ungate SOR");
+    }
 }
 
 fn main() {
@@ -170,7 +288,16 @@ fn main() {
 
     info!("Hello World");
 
-    let res = execute_tsec_fw(FALCON_FW);
+    // HOST1X is expected to be up
+    Clock::HOST1X.enable();
+
+    bring_up_sors();
+
+    let mut argument0 = 0;
+    let mut argument1 = 0;
+    let res = unsafe { execute_tsec_fw(&FALCON_FW.value, 0, &mut argument0, &mut argument1) };
 
     info!("{:?}", res);
+    info!("argument0: 0x{:x}", argument0);
+    info!("argument1: 0x{:x}", argument1);
 }

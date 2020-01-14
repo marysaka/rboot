@@ -3,6 +3,7 @@ pub mod board;
 pub mod clock;
 pub mod gpio;
 pub mod pinmux;
+pub mod mc;
 pub mod timer;
 pub mod tsec;
 pub mod uart;

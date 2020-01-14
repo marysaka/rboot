@@ -90,7 +90,7 @@ pub struct TSEC {
     pub FALCON_DMACTL: ReadWrite<u32>,  // 0x110c
     pub FALCON_DMATRFBASE: ReadWrite<u32>,  // 0x1110
     pub FALCON_DMATRFMOFFS: ReadWrite<u32>,  // 0x1114
-    pub FALCON_DMATRFCMD: ReadOnly<u32>,  // 0x1118
+    pub FALCON_DMATRFCMD: ReadWrite<u32>,  // 0x1118
     pub FALCON_DMATRFFBOFFS: ReadWrite<u32>,  // 0x111c
     pub FALCON_DMAPOLL_FB: ReadWrite<u32>,  // 0x1120
     pub FALCON_DMAPOLL_CP: ReadWrite<u32>,  // 0x1124
