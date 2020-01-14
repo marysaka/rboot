@@ -51,7 +51,7 @@ impl UART {
     };
     pub const E: Self = UART {
         register_base: 0x7000_6400 as *const UARTRegister,
-        clock: &Clock::UART_E
+        clock: &Clock::UART_E,
     };
 
     pub fn init(&self, baud: u32) {

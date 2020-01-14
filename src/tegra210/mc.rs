@@ -44,6 +44,6 @@ pub mod smmu {
     pub const PTC_FLUSH_ALL: u32 = 0;
 }
 
-assert_eq_size!(mc; MemoryController, [u8; 0x240]);
+assert_eq_size!(MemoryController, [u8; 0x240]);
 
 impl MemoryController {}

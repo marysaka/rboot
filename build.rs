@@ -9,6 +9,7 @@ use std::process::Command;
 fn main() {
     let faucon_dir = env::var("FAUCON_DIR").unwrap();
     println!("cargo:rerun-if-changed={}/faucon.asm", faucon_dir);
+    println!("cargo:rerun-if-changed={}/faucon_fw.bin", faucon_dir);
 
     let faucon_meta = std::fs::metadata(format!("{}/faucon_fw.bin", faucon_dir)).unwrap();
 

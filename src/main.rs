@@ -29,8 +29,6 @@ use crate::tegra210::board;
 use crate::tegra210::clock::Clock;
 use crate::tegra210::*;
 
-use core::ops::Deref;
-
 use log::Level;
 
 const APB: *const apb::AMBAPeripheralBus = 0x7000_0000 as *const apb::AMBAPeripheralBus;
@@ -108,10 +106,50 @@ const TSEC_FALCON_CPUCTL_ALIAS_EN: u32 = 1 << 6;
 const TSEC_FW_ALIGN_BITS: usize = 8;
 const TSEC_FW_ALIGN: usize = 1 << TSEC_FW_ALIGN_BITS;
 
+#[repr(u8)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum FalconExceptionCause {
+    Trap0,
+    Trap1,
+    Trap2,
+    Trap3,
+    InvalidOpcode,
+    AuthenticationEntry,
+    PageMiss,
+    PageMultipleMiss,
+    BreakpointHit,
+}
+
+impl From<u8> for FalconExceptionCause {
+    fn from(exception_cause: u8) -> FalconExceptionCause {
+        match exception_cause {
+            0 => FalconExceptionCause::Trap0,
+            1 => FalconExceptionCause::Trap1,
+            2 => FalconExceptionCause::Trap2,
+            3 => FalconExceptionCause::Trap3,
+            8 => FalconExceptionCause::InvalidOpcode,
+            9 => FalconExceptionCause::AuthenticationEntry,
+            10 => FalconExceptionCause::PageMiss,
+            11 => FalconExceptionCause::PageMultipleMiss,
+            15 => FalconExceptionCause::BreakpointHit,
+            n => unreachable!("Got unexpected FalconExceptionCause: {}", n),
+        }
+    }
+}
+
+impl From<FalconExceptionCause> for u8 {
+    fn from(exception_cause: FalconExceptionCause) -> u8 {
+        exception_cause as u8
+    }
+}
+
+assert_eq_size!(FalconExceptionCause, u8);
+
 #[derive(Debug)]
-enum FalconError {
+pub enum FalconError {
     DmaTimeout,
-    FirmwareMisaligned
+    FirmwareMisaligned,
+    Exception(u32, FalconExceptionCause),
 }
 
 fn tsec_dma_wait_idle(tsec: &tsec::TSEC) -> Result<(), FalconError> {
@@ -129,12 +167,13 @@ fn tsec_dma_wait_idle(tsec: &tsec::TSEC) -> Result<(), FalconError> {
 fn tsec_dma_copy_to_internal(tsec: &tsec::TSEC, firmware: &[u8]) -> Result<(), FalconError> {
     let firmware_addr = firmware.as_ptr() as usize;
     if (firmware_addr % TSEC_FW_ALIGN) != 0 {
-        return Err(FalconError::FirmwareMisaligned)
+        return Err(FalconError::FirmwareMisaligned);
     }
 
-    tsec.FALCON_DMATRFBASE.set((firmware_addr >> TSEC_FW_ALIGN_BITS) as u32);
+    tsec.FALCON_DMATRFBASE
+        .set((firmware_addr >> TSEC_FW_ALIGN_BITS) as u32);
 
-    for (index, data) in firmware.chunks(TSEC_FW_ALIGN).enumerate() {
+    for (index, _) in firmware.chunks(TSEC_FW_ALIGN).enumerate() {
         let base = (index * TSEC_FW_ALIGN) as u32;
         let offset = base;
 
@@ -148,8 +187,13 @@ fn tsec_dma_copy_to_internal(tsec: &tsec::TSEC, firmware: &[u8]) -> Result<(), F
     Ok(())
 }
 
-fn execute_tsec_fw(firmware: &[u8], boot_vector_address: u32, argument0: &mut u32, argument1: &mut u32) -> Result<(), FalconError> {
-    let mut res = Ok(());
+fn execute_tsec_fw(
+    firmware: &[u8],
+    boot_vector_address: u32,
+    argument0: &mut u32,
+    argument1: &mut u32,
+) -> Result<(), FalconError> {
+    let mut res;
 
     Clock::SE.enable();
     Clock::HOST1X.enable();
@@ -182,7 +226,9 @@ fn execute_tsec_fw(firmware: &[u8], boot_vector_address: u32, argument0: &mut u3
     );
 
     // Enable all interfaces
-    tsec_instance.FALCON_ITFEN.set(TSEC_ITFEN_CTXEN | TSEC_ITFEN_MTHDEN);
+    tsec_instance
+        .FALCON_ITFEN
+        .set(TSEC_ITFEN_CTXEN | TSEC_ITFEN_MTHDEN);
 
     res = tsec_dma_wait_idle(tsec_instance);
     if res.is_ok() {
@@ -205,6 +251,16 @@ fn execute_tsec_fw(firmware: &[u8], boot_vector_address: u32, argument0: &mut u3
             if res.is_ok() {
                 // Wait for the CPU to be halted
                 while tsec_instance.FALCON_CPUCTL.get() != TSEC_FALCON_CPUCTL_HALTED {}
+
+                // Check that the CPU hasn't crashed
+                let exception_info = tsec_instance.FALCON_EXCI.get();
+
+                if exception_info != 0 {
+                    let pc = exception_info & 0x80000;
+                    let exception = FalconExceptionCause::from((exception_info >> 20) as u8 & 0xF);
+
+                    res = Err(FalconError::Exception(pc, exception));
+                }
 
                 *argument0 = tsec_instance.FALCON_MAILBOX0.get();
                 *argument1 = tsec_instance.FALCON_MAILBOX1.get();
@@ -229,14 +285,13 @@ unsafe fn pmc_powergate_partition(partition_id: u32, enabled: bool) -> Result<()
     let partition_mask = 1 << partition_id;
     let state_changed = (enabled as u32) << partition_id;
 
-    if (pmc_powergate_status.get() & partition_mask) == state_changed{
+    if (pmc_powergate_status.get() & partition_mask) == state_changed {
         info!("parition_id: {} already {}", partition_id, enabled);
         return Ok(());
     }
 
     let mut i = 5001;
-    while (pmc_powergate_toggle.get() & 0x100) != 0
-    {
+    while (pmc_powergate_toggle.get() & 0x100) != 0 {
         timer::usleep(1);
         i -= 1;
         if i < 1 {
@@ -247,8 +302,7 @@ unsafe fn pmc_powergate_partition(partition_id: u32, enabled: bool) -> Result<()
     pmc_powergate_toggle.set(partition_id | 0x100);
 
     i = 5001;
-    while i > 0
-    {
+    while i > 0 {
         if (pmc_powergate_status.get() & partition_mask) == state_changed {
             let pmc_remove_clamping_cmd: &ReadWrite<u32> = &*(0x7000E434 as *mut ReadWrite<u32>);
 
@@ -265,7 +319,9 @@ unsafe fn pmc_powergate_partition(partition_id: u32, enabled: bool) -> Result<()
 }
 
 fn bring_up_sors() {
-    unsafe { pmc_powergate_partition(17, false).expect("Cannot power ungate SOR"); }
+    unsafe {
+        pmc_powergate_partition(17, false).expect("Cannot power ungate SOR");
+    }
 
     Clock::SOR_SAFE.enable();
     Clock::SOR0.enable();
@@ -295,7 +351,7 @@ fn main() {
 
     let mut argument0 = 0;
     let mut argument1 = 0;
-    let res = unsafe { execute_tsec_fw(&FALCON_FW.value, 0, &mut argument0, &mut argument1) };
+    let res = execute_tsec_fw(&FALCON_FW.value, 0, &mut argument0, &mut argument1);
 
     info!("{:?}", res);
     info!("argument0: 0x{:x}", argument0);

@@ -1,5 +1,8 @@
 #[repr(align(256))]
-pub struct AlignedData256<T> where T: Sized {
+pub struct AlignedData256<T>
+where
+    T: Sized,
+{
     pub value: T,
 }
 

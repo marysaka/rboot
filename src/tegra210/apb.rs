@@ -43,8 +43,8 @@ pub struct Misc {
     pub gp: MiscGP,
 }
 
-assert_eq_size!(pp; MiscPP, [u8; 0x400]);
-assert_eq_size!(gp; MiscGP, [u8; 0x400]);
+assert_eq_size!(MiscPP, [u8; 0x400]);
+assert_eq_size!(MiscGP, [u8; 0x400]);
 
 #[allow(non_snake_case)]
 #[repr(C)]

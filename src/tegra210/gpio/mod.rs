@@ -207,4 +207,4 @@ pub struct GpioCtlr {
     banks: [GpioCtl; 8],
 }
 
-assert_eq_size!(pp; GpioCtlr, [u8; 0x800]);
+assert_eq_size!(GpioCtlr, [u8; 0x800]);

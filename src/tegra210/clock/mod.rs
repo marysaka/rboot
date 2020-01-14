@@ -130,7 +130,7 @@ impl Clock {
         clock_source: 0,
         clock_divisor: 0,
     };
-    
+
     pub const DPAUX: Clock = Clock {
         reset: CLK_RST_CONTROLLER_RST_DEVICES_X,
         enable: CLK_RST_CONTROLLER_CLK_OUT_ENB_X,
@@ -262,7 +262,8 @@ impl Clock {
         }
 
         // Enable clock
-        if self == &Self::KFUSE { // KFUSE steps out of line.
+        if self == &Self::KFUSE {
+            // KFUSE steps out of line.
             self.set_enable(true);
             usleep(100);
             self.set_reset(false);
