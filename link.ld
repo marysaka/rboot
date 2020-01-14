@@ -160,9 +160,7 @@ SECTIONS
     . = ALIGN(8);
     HIDDEN(__bss_end__ = .);
     . = ALIGN(0x1000);
-  } :bss
 
-  .stack : ALIGN(4K) {
     . = ALIGN(16);
     _stack_bottom = .;
     . = . + 0x1000; /* 4kB of stack memory */
