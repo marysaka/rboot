@@ -5,7 +5,6 @@
 #![feature(core_intrinsics)]
 #![feature(naked_functions)]
 
-#[macro_use]
 extern crate enum_primitive;
 
 #[macro_use]
@@ -14,7 +13,6 @@ extern crate libtegra;
 #[macro_use]
 extern crate log;
 
-#[macro_use]
 extern crate static_assertions;
 
 pub mod exception_vectors;
