@@ -23,5 +23,5 @@ fn main() {
         .expect("failed to execute falcon fw compilation");
 
     f.write_all(b"use libtegra::tsec::Firmware;").unwrap();
-    f.write_all(format!("static FALCON_FW: Firmware<u8, {{ {} }}> = Firmware::new(*include_bytes!(concat!(env!(\"FAUCON_DIR\"),\"faucon_fw.bin\")));", faucon_meta.len()).as_bytes()).unwrap();
+    f.write_all(format!("static FALCON_FW: Firmware<u8, {}> = Firmware::new(*include_bytes!(concat!(env!(\"FAUCON_DIR\"),\"faucon_fw.bin\")));", faucon_meta.len()).as_bytes()).unwrap();
 }
