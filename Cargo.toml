@@ -9,6 +9,7 @@ memcpy = true
 sysroot_path = "target/sysroot"
 
 [dependencies]
+cortex-a = "5.1"
 log = "0.4.6"
 register = "0.3.2"
 static_assertions = "*"
