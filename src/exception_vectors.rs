@@ -1,5 +1,6 @@
-use crate::tegra210::uart::UART;
 use core::fmt::Write;
+
+use libtegra::uart::Uart;
 
 use crate::rt;
 use crate::utils;
@@ -225,7 +226,7 @@ struct ExceptionInfo {
 }
 
 unsafe fn dump_exception(exception: &mut ExceptionInfo) {
-    let mut uart_a = UART::A;
+    let mut uart_a = Uart::A;
 
     writeln!(&mut uart_a, "Fault address:\t{:20x}\r", exception.far).ok();
     writeln!(&mut uart_a, "Register dump:\r").ok();
@@ -244,7 +245,7 @@ unsafe fn dump_exception(exception: &mut ExceptionInfo) {
 
 #[no_mangle]
 unsafe extern "C" fn unhandled_vector(exception: &mut ExceptionInfo) {
-    let mut uart_a = UART::A;
+    let mut uart_a = Uart::A;
     writeln!(&mut uart_a, "\r").ok();
     writeln!(
         &mut uart_a,
@@ -314,7 +315,7 @@ pub fn get_instruction_fault_name(esr: u64) -> &'static str {
 
 #[no_mangle]
 unsafe extern "C" fn current_elx_sync(exception: &mut ExceptionInfo) {
-    let mut uart_a = UART::A;
+    let mut uart_a = Uart::A;
     writeln!(&mut uart_a, "\r").ok();
     writeln!(
         &mut uart_a,

@@ -1,5 +1,6 @@
-use crate::tegra210::uart::UART;
 use core::fmt::Write;
+
+use libtegra::uart::Uart;
 use log::{Level, Metadata, Record};
 use log::{LevelFilter, SetLoggerError};
 
@@ -19,11 +20,11 @@ struct UARTLogger {
 impl UARTLogger {
     fn get_uart(&self) -> UART {
         match self.uart_type {
-            Type::A => UART::A,
-            Type::B => UART::B,
-            Type::C => UART::C,
-            Type::D => UART::D,
-            Type::E => UART::E,
+            Type::A => Uart::A,
+            Type::B => Uart::B,
+            Type::C => Uart::C,
+            Type::D => Uart::D,
+            Type::E => Uart::E,
         }
     }
 
