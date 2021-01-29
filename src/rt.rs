@@ -1,13 +1,13 @@
 #![allow(clippy::empty_loop)]
 
+use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::ptr;
 
 use crate::exception_vectors;
 use crate::mmu;
-use crate::tegra210;
 
-use core::fmt::Write;
+use libtegra::uart::Uart;
 
 #[macro_export]
 macro_rules! entry {
@@ -24,7 +24,7 @@ macro_rules! entry {
 
 #[panic_handler]
 fn panic(panic_info: &PanicInfo<'_>) -> ! {
-    let mut uart_a = &mut tegra210::uart::UART::A;
+    let mut uart_a = &mut Uart::A;
     writeln!(&mut uart_a, "PANIC: {}\r", panic_info).ok();
     unsafe {
         reboot_to_rcm();
