@@ -43,48 +43,52 @@ extern "C" {
 pub unsafe extern "C" fn reboot_to_rcm() {
     asm!(
         "
-    mov x1, xzr
-    mov w2, #0x2
-    movz x1, 0xE450
-    movk x1, #0x7000, lsl 16
-    str w2, [x1]
-    movz x1, #0xE400
-    movk x1, #0x7000, lsl 16
-    ldr w0, [x1]
-    orr w0, w0, #0x10
-    str w0, [x1]"
+        mov x1, xzr
+        mov w2, #0x2
+        movz x1, 0xE450
+        movk x1, #0x7000, lsl 16
+        str w2, [x1]
+        movz x1, #0xE400
+        movk x1, #0x7000, lsl 16
+        ldr w0, [x1]
+        orr w0, w0, #0x10
+        str w0, [x1]
+        "
     );
 }
 
 #[link_section = ".text.crt0"]
 #[naked]
 #[no_mangle]
-pub unsafe extern "C" fn _start() {
+pub unsafe extern "C" fn _start() -> ! {
     asm!(
         "
-     b trampoline
-     .word _DYNAMIC - _start
-    "
-    );
+        b trampoline
+        .word _DYNAMIC - _start
+        ",
+        options(noreturn),
+    )
 }
 
 #[naked]
 #[no_mangle]
-pub unsafe extern "C" fn trampoline() {
+pub unsafe extern "C" fn trampoline() -> ! {
     asm!(
         "
-     adrp x0, _stack_top
-     add x0, x0, #:lo12:_stack_top
-     mov sp, x0
-     adrp x0, _start
-     bl relocate_self
+        adrp x0, _stack_top
+        add x0, x0, #:lo12:_stack_top
+        mov sp, x0
+        adrp x0, _start
+        bl relocate_self
 
-     adrp x0, __bss_start__
-     add x0, x0, #:lo12:__bss_start__
-     adrp x1, __bss_end__
-     add x1, x1, #:lo12:__bss_end__
-     bl clean_bss
-     bl _start_with_stack"
+        adrp x0, __bss_start__
+        add x0, x0, #:lo12:__bss_start__
+        adrp x1, __bss_end__
+        add x1, x1, #:lo12:__bss_end__
+        bl clean_bss
+        bl _start_with_stack
+        ",
+        options(noreturn),
     )
 }
 

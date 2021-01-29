@@ -187,7 +187,7 @@ global_asm!(
 
 #[naked]
 #[no_mangle]
-unsafe fn _unhandled_vector() {
+unsafe extern "C" fn _unhandled_vector() -> ! {
     asm!(
         "
         __save_generic_registers
@@ -196,13 +196,15 @@ unsafe fn _unhandled_vector() {
         bl unhandled_vector
         __restore_el_registers
         __restore_generic_registers
-        eret"
-    );
+        eret
+        ",
+        options(noreturn),
+    )
 }
 
 #[naked]
 #[no_mangle]
-unsafe fn _current_elx_sync() {
+unsafe extern "C" fn _current_elx_sync() -> ! {
     asm!(
         "
         __save_generic_registers
@@ -211,8 +213,10 @@ unsafe fn _current_elx_sync() {
         bl current_elx_sync
         __restore_el_registers
         __restore_generic_registers
-        eret"
-    );
+        eret
+        ",
+        options(noreturn),
+    )
 }
 
 #[repr(C)]

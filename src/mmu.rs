@@ -524,9 +524,9 @@ fn get_sctlr() -> u64 {
 
     unsafe {
         match utils::get_current_el() {
-            1 => asm!("mrs {sctrl}, sctrl_el1", sctrl = out(reg) ctrl, options(nostack)),
-            2 => asm!("mrs {sctrl}, sctrl_el2", sctrl = out(reg) ctrl, options(nostack)),
-            3 => asm!("mrs {sctrl}, sctrl_el3", sctrl = out(reg) ctrl, options(nostack)),
+            1 => asm!("mrs {sctlr}, sctlr_el1", sctlr = out(reg) ctrl, options(nostack)),
+            2 => asm!("mrs {sctlr}, sctlr_el2", sctlr = out(reg) ctrl, options(nostack)),
+            3 => asm!("mrs {sctlr}, sctlr_el3", sctlr = out(reg) ctrl, options(nostack)),
             _ => unimplemented!(),
         }
     }
@@ -537,9 +537,9 @@ fn get_sctlr() -> u64 {
 fn set_sctlr(new_sctlr: u64) {
     unsafe {
         match utils::get_current_el() {
-            1 => asm!("msr sctrl_el1, {sctrl}", sctrl = in(reg) new_sctrl, options(nostack)),
-            2 => asm!("msr sctrl_el2, {sctrl}", sctrl = in(reg) new_sctrl, options(nostack)),
-            3 => asm!("msr sctrl_el3, {sctrl}", sctrl = in(reg) new_sctrl, options(nostack)),
+            1 => asm!("msr sctlr_el1, {sctlr}", sctlr = in(reg) new_sctlr, options(nostack)),
+            2 => asm!("msr sctlr_el2, {sctlr}", sctlr = in(reg) new_sctlr, options(nostack)),
+            3 => asm!("msr sctlr_el3, {sctlr}", sctlr = in(reg) new_sctlr, options(nostack)),
             _ => unimplemented!(),
         }
 

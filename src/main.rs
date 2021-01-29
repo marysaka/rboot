@@ -14,12 +14,8 @@ extern crate libtegra;
 #[macro_use]
 extern crate log;
 
-extern crate register;
-
 #[macro_use]
 extern crate static_assertions;
-
-extern crate num_traits;
 
 pub mod exception_vectors;
 pub mod logger;
@@ -30,13 +26,14 @@ pub mod utils;
 
 use crate::tegra210::board;
 
+use libtegra::apb::misc::REGISTERS as APB;
 use libtegra::car::Clock;
-use libtegra::mc::REGISTERS as MC;
 use libtegra::pmc::{powergate_partition, Partition};
 use libtegra::tsec::{FalconError, Tsec};
 use libtegra::uart::{Uart, BAUD_115200};
-use libtegra::apb::misc::REGISTERS as APB;
 use log::Level;
+
+include!(concat!(env!("OUT_DIR"), "/falcon_fw.rs"));
 
 const TSEC: Tsec = Tsec::A;
 
@@ -76,10 +73,6 @@ fn log_init() {
 
     logger::init(logger::Type::A, Level::Trace).unwrap();
 }
-
-use register::mmio::*;
-
-include!(concat!(env!("OUT_DIR"), "/falcon_fw.rs"));
 
 fn bring_up_sors() {
     powergate_partition(Partition::SOR, false).expect("Cannot power ungate SOR");

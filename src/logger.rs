@@ -18,7 +18,7 @@ struct UARTLogger {
 }
 
 impl UARTLogger {
-    fn get_uart(&self) -> UART {
+    fn get_uart(&self) -> Uart {
         match self.uart_type {
             Type::A => Uart::A,
             Type::B => Uart::B,

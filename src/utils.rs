@@ -11,7 +11,9 @@ pub fn align_down<T: Num + Not<Output = T> + BitAnd<Output = T> + Copy>(addr: T,
 
 pub fn get_current_el() -> u32 {
     let current_el: u32;
-    unsafe { asm!("mrs $0, CurrentEL" : "=r"(current_el) ::: "volatile") }
+    unsafe {
+        asm!("mrs {el}, CurrentEL", el = out(reg) current_el, options(nostack));
+    }
 
     current_el >> 2
 }
