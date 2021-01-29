@@ -35,7 +35,7 @@ use libtegra::mc::REGISTERS as MC;
 use libtegra::pmc::{powergate_partition, Partition};
 use libtegra::tsec::{FalconError, Tsec};
 use libtegra::uart::{Uart, BAUD_115200};
-use libtegra::{apb::misc::REGISTERS as APB, pmc::powergate_partition};
+use libtegra::apb::misc::REGISTERS as APB;
 use log::Level;
 
 const TSEC: Tsec = Tsec::A;
