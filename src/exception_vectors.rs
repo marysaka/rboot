@@ -53,9 +53,9 @@ global_asm!(
 pub fn set_vbar(vbar: u64) {
     unsafe {
         match utils::get_current_el() {
-            1 => asm!("msr vbar_el1, $0" :: "r"(vbar) :: "volatile"),
-            2 => asm!("msr vbar_el2, $0" :: "r"(vbar) :: "volatile"),
-            3 => asm!("msr vbar_el3, $0" :: "r"(vbar) :: "volatile"),
+            1 => asm!("msr vbar_el1, {vbar}", vbar = in(reg) vbar, options(nostack)),
+            1 => asm!("msr vbar_el2, {vbar}", vbar = in(reg) vbar, options(nostack)),
+            1 => asm!("msr vbar_el3, {vbar}", vbar = in(reg) vbar, options(nostack)),
             _ => unimplemented!(),
         }
     }

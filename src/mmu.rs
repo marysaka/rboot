@@ -1,6 +1,7 @@
 #![allow(clippy::identity_op)]
 
 use crate::utils;
+use cortex_a::barrier::*;
 use register::register_bitfields;
 
 extern "C" {
@@ -248,7 +249,7 @@ fn create_lvl2_block_entry(vaddr: u64, paddr: u64, memory_attribute: u64) {
     unsafe {
         LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] =
             (flags + STAGE2_BLOCK_DESCRIPTOR::ADDRESS_4K.val(paddr >> L2_INDEX_LSB)).value;
-        asm!("dsb sy" ::: "memory");
+        dsb(SY);
     };
 }
 
@@ -264,7 +265,7 @@ fn create_lvl2_table_entry(vaddr: u64, table_address: u64) {
         LVL1_TABLE.lvl2[lvl1_index].entries[lvl2_index] = (flags
             + STAGE2_NEXTLEVEL_DESCRIPTOR::ADDRESS_4K.val(table_address >> L3_INDEX_LSB))
         .value;
-        asm!("dsb sy" ::: "memory");
+        dsb(SY);
     };
 }
 
@@ -317,7 +318,7 @@ fn create_lvl3_page(vaddr: u64, paddr: u64, permission: MemoryPermission, memory
         };
 
         LVL1_TABLE.lvl2[lvl1_index].lvl3[lvl2_index].entries[lvl3_index] = value;
-        asm!("dsb sy" ::: "memory");
+        dsb(SY);
     };
 }
 
@@ -353,8 +354,8 @@ pub fn map_page(
     // TLB maintenance
     // TODO: EL2 & EL3
     unsafe {
-        asm!("dsb sy" :::: "volatile");
-        asm!("isb" :::: "volatile");
+        dsb(SY);
+        isb(SY);
     };
 
     invalidate_tlb_all()
@@ -380,8 +381,8 @@ pub fn unmap_page(vaddr: u64, size: u64) {
     // TLB maintenance
     // TODO: EL2 & EL3
     unsafe {
-        asm!("dsb sy" :::: "volatile");
-        asm!("isb" :::: "volatile");
+        dsb(SY);
+        isb(SY);
     };
 
     invalidate_tlb_all()
@@ -523,9 +524,9 @@ fn get_sctlr() -> u64 {
 
     unsafe {
         match utils::get_current_el() {
-            1 => asm!("mrs $0, sctlr_el1" : "=r"(ctrl) ::: "volatile"),
-            2 => asm!("mrs $0, sctlr_el2" : "=r"(ctrl) ::: "volatile"),
-            3 => asm!("mrs $0, sctlr_el3" : "=r"(ctrl) ::: "volatile"),
+            1 => asm!("mrs {sctrl}, sctrl_el1", sctrl = out(reg) ctrl, options(nostack)),
+            2 => asm!("mrs {sctrl}, sctrl_el2", sctrl = out(reg) ctrl, options(nostack)),
+            3 => asm!("mrs {sctrl}, sctrl_el3", sctrl = out(reg) ctrl, options(nostack)),
             _ => unimplemented!(),
         }
     }
@@ -536,13 +537,13 @@ fn get_sctlr() -> u64 {
 fn set_sctlr(new_sctlr: u64) {
     unsafe {
         match utils::get_current_el() {
-            1 => asm!("msr sctlr_el1, $0" :: "r"(new_sctlr) :: "volatile"),
-            2 => asm!("msr sctlr_el2, $0" :: "r"(new_sctlr) :: "volatile"),
-            3 => asm!("msr sctlr_el3, $0" :: "r"(new_sctlr) :: "volatile"),
+            1 => asm!("msr sctrl_el1, {sctrl}", sctrl = in(reg) new_sctrl, options(nostack)),
+            2 => asm!("msr sctrl_el2, {sctrl}", sctrl = in(reg) new_sctrl, options(nostack)),
+            3 => asm!("msr sctrl_el3, {sctrl}", sctrl = in(reg) new_sctrl, options(nostack)),
             _ => unimplemented!(),
         }
 
-        asm!("isb" :::: "volatile");
+        isb(SY);
     }
 }
 
@@ -564,13 +565,13 @@ pub fn switch_ttbr(address: u64) {
     unsafe {
         // Set TTRBR
         match current_el {
-            1 => asm!("msr ttbr0_el1, $0" :: "r"(address) :: "volatile"),
-            2 => asm!("msr ttbr0_el2, $0" :: "r"(address) :: "volatile"),
-            3 => asm!("msr ttbr0_el3, $0" :: "r"(address) :: "volatile"),
+            1 => asm!("msr ttbr0_el1, {addr}", addr = in(reg) address, options(nostack)),
+            2 => asm!("msr ttbr0_el2, {addr}", addr = in(reg) address, options(nostack)),
+            3 => asm!("msr ttbr0_el3, {addr}", addr = in(reg) address, options(nostack)),
             _ => unimplemented!(),
         }
 
-        asm!("isb" :::: "volatile");
+        isb(SY);
     }
 
     // Restore previous sctlr.
@@ -580,22 +581,22 @@ pub fn switch_ttbr(address: u64) {
 pub fn invalidate_tlb_all() {
     unsafe {
         match utils::get_current_el() {
-            1 => asm!("tlbi vmalle1" :::: "volatile"),
-            2 => asm!("tlbi alle2" :::: "volatile"),
-            3 => asm!("tlbi alle3" :::: "volatile"),
+            1 => asm!("tlbi vmalle1"),
+            2 => asm!("tlbi alle2"),
+            3 => asm!("tlbi alle3"),
             _ => unimplemented!(),
         }
 
-        asm!("dsb sy" :::: "volatile");
-        asm!("isb" :::: "volatile");
+        dsb(SY);
+        isb(SY);
     }
 }
 
 pub fn invalidate_icache_all() {
     unsafe {
-        asm!("ic iallu" :::: "volatile");
-        asm!("dsb sy" :::: "volatile");
-        asm!("isb" :::: "volatile");
+        asm!("ic iallu");
+        dsb(SY);
+        isb(SY);
     }
 }
 
@@ -617,36 +618,60 @@ fn enable_maintenance_operations() {
     if utils::get_current_el() == 3 {
         unsafe {
             let mut cpu_ectrl: u64;
-            asm!("mrs $0, S3_1_C15_C2_1" : "=r"(cpu_ectrl) ::: "volatile");
+            asm!("mrs {cpu_ectrl}, S3_1_C15_C2_1", cpu_ectrl = out(reg) cpu_ectrl, options(nostack));
             cpu_ectrl |= 1 << 6;
-            asm!("msr S3_1_C15_C2_1, $0" :: "r"(cpu_ectrl) :: "volatile");
+            asm!("msr S3_1_C15_C2_1, {cpu_ectrl}", cpu_ectrl = in(reg) cpu_ectrl, options(nostack));
         }
     }
 }
 
 unsafe fn set_mair_ttbr_tcr(mair: u64, ttbr: u64, tcr: u64) {
-    asm!("dsb sy" :::: "volatile");
+    dsb(SY);
 
     match utils::get_current_el() {
         1 => {
-            asm!("msr mair_el1, $0" :: "r"(mair) :: "volatile");
-            asm!("msr ttbr0_el1, $0" :: "r"(ttbr) :: "volatile");
-            asm!("msr tcr_el1, $0":: "r"(tcr) :: "volatile");
+            asm!(
+                "
+                msr mair_el1, {mair}
+                msr ttbr0_el1, {ttbr}
+                msr tcr_el1, {tcr}
+                ",
+                mair = in(reg) mair,
+                ttbr = in(reg) ttbr,
+                tcr = in(reg) tcr,
+                options(nostack),
+            );
         }
         2 => {
-            asm!("msr mair_el2, $0" :: "r"(mair) :: "volatile");
-            asm!("msr ttbr0_el2, $0" :: "r"(ttbr) :: "volatile");
-            asm!("msr tcr_el2, $0":: "r"(tcr) :: "volatile");
+            asm!(
+                "
+                msr mair_el2, {mair}
+                msr ttbr0_el2, {ttbr}
+                msr tcr_el2, {tcr}
+                ",
+                mair = in(reg) mair,
+                ttbr = in(reg) ttbr,
+                tcr = in(reg) tcr,
+                options(nostack),
+            );
         }
         3 => {
-            asm!("msr mair_el3, $0" :: "r"(mair) :: "volatile");
-            asm!("msr ttbr0_el3, $0" :: "r"(ttbr) :: "volatile");
-            asm!("msr tcr_el3, $0":: "r"(tcr) :: "volatile");
+            asm!(
+                "
+                msr mair_el3, {mair}
+                msr ttbr0_el3, {ttbr}
+                msr tcr_el3, {tcr}
+                ",
+                mair = in(reg) mair,
+                ttbr = in(reg) ttbr,
+                tcr = in(reg) tcr,
+                options(nostack),
+            );
         }
         _ => unimplemented!(),
     }
 
-    asm!("isb");
+    isb(SY);
 }
 
 pub unsafe fn setup() {
@@ -685,6 +710,6 @@ pub unsafe fn setup() {
     set_sctlr(ctrl);
 
     // and hope that it's okayish
-    asm!("dsb sy");
-    asm!("isb");
+    dsb(SY);
+    isb(SY);
 }
